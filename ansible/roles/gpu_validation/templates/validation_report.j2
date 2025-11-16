@@ -1,0 +1,48 @@
+================================================================================
+GPU Validation Report
+================================================================================
+
+Report Generated: {{ validation_time }}
+Hostname: {{ ansible_hostname }}
+Validation Level: {{ validation_level }}
+
+System Information:
+------------------
+OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+Kernel: {{ ansible_kernel }}
+Architecture: {{ ansible_architecture }}
+
+GPU Summary:
+-----------
+{% if nvidia_smi_check is defined and nvidia_smi_check.rc == 0 %}
+✓ NVIDIA driver installed and functioning
+{% else %}
+✗ NVIDIA driver check failed
+{% endif %}
+
+Validation Results:
+------------------
+{% if validation_level == 'quick' %}
+- Quick validation completed
+- Check quick_check JSON file for detailed results
+{% endif %}
+
+{% if validation_level in ['standard', 'full'] %}
+- Quick validation: COMPLETED
+- Standard validation: COMPLETED
+- CUDA functionality: {% if cuda_test is defined %}TESTED{% else %}N/A{% endif %}
+- Container GPU access: {% if container_test is defined and container_test.rc == 0 %}PASSED{% else %}N/A{% endif %}
+{% endif %}
+
+{% if validation_level == 'full' %}
+- DCGM diagnostics: {% if dcgm_quick is defined %}COMPLETED{% else %}N/A{% endif %}
+- GPU stress test: {% if gpu_burn_result is defined %}COMPLETED{% else %}N/A{% endif %}
+{% endif %}
+
+Output Files:
+------------
+All validation results are saved in: {{ output_dir }}
+
+================================================================================
+End of Report
+================================================================================

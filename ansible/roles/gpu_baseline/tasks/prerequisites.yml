@@ -1,0 +1,76 @@
+---
+# Prerequisites for NVIDIA driver installation
+# Based on NVIDIA documentation and community best practices
+
+- name: Update apt cache (Debian/Ubuntu)
+  apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: Install required packages (Debian/Ubuntu)
+  apt:
+    name:
+      - build-essential
+      - dkms
+      - linux-headers-{{ ansible_kernel }}
+      - pkg-config
+      - libglvnd-dev
+      - curl
+      - gnupg
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install required packages (RedHat/CentOS)
+  yum:
+    name:
+      - gcc
+      - kernel-devel
+      - kernel-headers
+      - dkms
+      - make
+      - curl
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Check if nouveau is loaded
+  shell: lsmod | grep nouveau
+  register: nouveau_loaded
+  failed_when: false
+  changed_when: false
+
+- name: Blacklist nouveau driver
+  copy:
+    dest: /etc/modprobe.d/blacklist-nouveau.conf
+    content: |
+      blacklist nouveau
+      options nouveau modeset=0
+    mode: '0644'
+  when: disable_nouveau | bool
+  notify: update_initramfs
+
+- name: Configure GRUB for IOMMU
+  lineinfile:
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash intel_iommu=on iommu=pt"'
+    backup: yes
+  when: configure_grub | bool
+  notify: update_grub
+
+- name: Flush handlers to apply changes
+  meta: flush_handlers
+
+- name: Check if reboot is required for nouveau blacklist
+  stat:
+    path: /var/run/reboot-required
+  register: reboot_required_file
+
+- name: Reboot if nouveau was loaded and blacklisted
+  reboot:
+    msg: "{{ reboot_message }}"
+    reboot_timeout: "{{ reboot_timeout }}"
+  when:
+    - nouveau_loaded.rc == 0
+    - disable_nouveau | bool
+    - not nvidia_driver_skip_reboot | bool

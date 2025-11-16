@@ -1,0 +1,42 @@
+---
+# Main tasks for gpu_baseline role
+# Installs NVIDIA drivers, CUDA, and optionally container runtime
+# Based on NVIDIA official ansible-role-nvidia-driver and community practices
+
+- name: Include OS-specific variables
+  include_vars: "{{ ansible_os_family }}.yml"
+  tags: always
+
+- name: Create log directory
+  file:
+    path: "{{ log_directory }}"
+    state: directory
+    mode: '0755'
+  tags: always
+
+- name: Run prerequisites tasks
+  include_tasks: prerequisites.yml
+  tags: prerequisites
+
+- name: Install NVIDIA driver
+  include_tasks: nvidia_driver.yml
+  tags: nvidia_driver
+
+- name: Install CUDA toolkit
+  include_tasks: cuda.yml
+  when: install_cuda | bool
+  tags: cuda
+
+- name: Setup container runtime
+  include_tasks: container_runtime.yml
+  when: install_container_runtime | bool
+  tags: container_runtime
+
+- name: Configure GPU settings
+  include_tasks: gpu_config.yml
+  tags: gpu_config
+
+- name: Run post-installation validation
+  include_tasks: post_validation.yml
+  when: run_post_install_validation | bool
+  tags: validation

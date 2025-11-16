@@ -1,0 +1,38 @@
+---
+# GPU configuration tasks
+# Configure persistence mode, power limits, etc.
+
+- name: Enable GPU persistence mode
+  command: nvidia-smi -pm 1
+  when: gpu_persistence_mode | bool
+  changed_when: false
+
+- name: Set GPU power limit
+  command: "nvidia-smi -pl {{ gpu_power_limit }}"
+  when: gpu_power_limit is defined and gpu_power_limit is not none
+  changed_when: false
+
+- name: Create systemd service for GPU persistence
+  copy:
+    dest: /etc/systemd/system/nvidia-persistenced.service
+    content: |
+      [Unit]
+      Description=NVIDIA Persistence Daemon
+      Wants=syslog.target
+
+      [Service]
+      Type=forking
+      ExecStart=/usr/bin/nvidia-persistenced --user nvidia-persistenced
+      ExecStopPost=/bin/rm -rf /var/run/nvidia-persistenced
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  when: gpu_persistence_mode | bool
+
+- name: Enable and start nvidia-persistenced service
+  systemd:
+    name: nvidia-persistenced
+    enabled: yes
+    state: started
+  when: gpu_persistence_mode | bool

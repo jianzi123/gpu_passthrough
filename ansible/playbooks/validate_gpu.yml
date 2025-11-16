@@ -1,0 +1,198 @@
+---
+# GPU Validation Playbook
+# Validates GPU functionality at different levels
+# Based on NVIDIA DCGM and community validation practices
+
+- name: Validate GPU Installation and Functionality
+  hosts: gpu_nodes
+  become: yes
+  gather_facts: yes
+
+  vars:
+    validation_level: "{{ level | default('quick') }}"
+    output_dir: "/tmp/gpu_validation"
+    timestamp: "{{ ansible_date_time.epoch }}"
+
+  pre_tasks:
+    - name: Display validation information
+      debug:
+        msg:
+          - "Validation Level: {{ validation_level }}"
+          - "Target: {{ ansible_hostname }}"
+          - "Time: {{ ansible_date_time.iso8601 }}"
+
+    - name: Create output directory
+      file:
+        path: "{{ output_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Verify nvidia-smi is available
+      command: which nvidia-smi
+      register: nvidia_smi_check
+      failed_when: nvidia_smi_check.rc != 0
+      changed_when: false
+
+  tasks:
+    # Level 1: Quick validation (1-5 minutes)
+    - name: Run Level 1 - Quick Validation
+      block:
+        - name: Execute quick check script
+          script: ../../scripts/validation/quick_check.sh {{ output_dir }}/quick_check_{{ timestamp }}.json
+          register: quick_check_result
+
+        - name: Display quick check results
+          debug:
+            msg: "Quick validation completed. Check {{ output_dir }}/quick_check_{{ timestamp }}.json"
+
+      when: validation_level in ['quick', 'standard', 'full']
+
+    # Level 2: Standard validation (10-15 minutes)
+    - name: Run Level 2 - Standard Validation
+      block:
+        - name: Check CUDA samples availability
+          stat:
+            path: /usr/local/cuda/samples
+          register: cuda_samples
+
+        - name: Run simple CUDA test
+          shell: |
+            nvidia-smi -L
+            nvidia-smi --query-gpu=index,name,memory.total,compute_cap --format=csv
+          register: cuda_test
+          changed_when: false
+
+        - name: Check GPU memory bandwidth
+          shell: |
+            nvidia-smi --query-gpu=memory.total,memory.free,memory.used --format=csv,noheader,nounits
+          register: memory_check
+          changed_when: false
+
+        - name: Test container GPU access (if Docker installed)
+          command: docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
+          register: container_test
+          failed_when: false
+          changed_when: false
+          when: install_container_runtime | default(false)
+
+        - name: Save standard validation results
+          copy:
+            dest: "{{ output_dir }}/standard_validation_{{ timestamp }}.txt"
+            content: |
+              Standard GPU Validation Results
+              Generated: {{ ansible_date_time.iso8601 }}
+              Host: {{ ansible_hostname }}
+
+              CUDA Test:
+              {{ cuda_test.stdout }}
+
+              Memory Check:
+              {{ memory_check.stdout }}
+
+              {% if container_test.rc == 0 %}
+              Container GPU Test: PASSED
+              {% else %}
+              Container GPU Test: SKIPPED or FAILED
+              {% endif %}
+
+      when: validation_level in ['standard', 'full']
+
+    # Level 3: Full validation (30-60 minutes)
+    - name: Run Level 3 - Full Validation
+      block:
+        - name: Install DCGM if not present
+          apt:
+            name: datacenter-gpu-manager
+            state: present
+          when:
+            - ansible_os_family == "Debian"
+
+        - name: Run DCGM diagnostics (Quick)
+          command: dcgmi diag -r 1
+          register: dcgm_quick
+          failed_when: false
+          changed_when: false
+          timeout: 600
+
+        - name: Run DCGM diagnostics (Extended)
+          command: dcgmi diag -r 2
+          register: dcgm_extended
+          failed_when: false
+          changed_when: false
+          timeout: 1800
+          when: validation_level == 'full'
+
+        - name: Save DCGM results
+          copy:
+            dest: "{{ output_dir }}/dcgm_diagnostics_{{ timestamp }}.txt"
+            content: |
+              DCGM Diagnostics Results
+              Generated: {{ ansible_date_time.iso8601 }}
+
+              Quick Diagnostics:
+              {{ dcgm_quick.stdout }}
+
+              {% if dcgm_extended is defined and dcgm_extended.stdout is defined %}
+              Extended Diagnostics:
+              {{ dcgm_extended.stdout }}
+              {% endif %}
+
+        - name: Clone GPU-Burn for stress testing
+          git:
+            repo: https://github.com/wilicc/gpu-burn
+            dest: /tmp/gpu-burn
+            version: master
+          when: validation_level == 'full'
+
+        - name: Compile GPU-Burn
+          shell: |
+            cd /tmp/gpu-burn
+            make
+          when: validation_level == 'full'
+          failed_when: false
+
+        - name: Run GPU stress test (10 minutes)
+          shell: |
+            cd /tmp/gpu-burn
+            ./gpu_burn 600
+          register: gpu_burn_result
+          failed_when: false
+          changed_when: false
+          when: validation_level == 'full'
+          timeout: 700
+
+        - name: Save stress test results
+          copy:
+            dest: "{{ output_dir }}/gpu_burn_{{ timestamp }}.txt"
+            content: |
+              GPU Burn Stress Test Results
+              Generated: {{ ansible_date_time.iso8601 }}
+
+              {{ gpu_burn_result.stdout }}
+          when:
+            - validation_level == 'full'
+            - gpu_burn_result.stdout is defined
+
+      when: validation_level == 'full'
+
+  post_tasks:
+    - name: Generate final validation report
+      template:
+        src: ../roles/gpu_validation/templates/validation_report.j2
+        dest: "{{ output_dir }}/final_report_{{ timestamp }}.txt"
+      vars:
+        validation_time: "{{ ansible_date_time.iso8601 }}"
+
+    - name: Fetch validation results to control node
+      fetch:
+        src: "{{ output_dir }}/"
+        dest: "./validation_results/{{ ansible_hostname }}/"
+        flat: no
+      failed_when: false
+
+    - name: Display validation summary
+      debug:
+        msg:
+          - "Validation Level: {{ validation_level }}"
+          - "Results saved to: {{ output_dir }}"
+          - "Check ./validation_results/{{ ansible_hostname }}/ on control node"

@@ -1,0 +1,43 @@
+---
+# Configure kernel boot parameters
+
+- name: Read current GRUB configuration
+  slurp:
+    path: /etc/default/grub
+  register: grub_config
+
+- name: Parse current kernel parameters
+  set_fact:
+    current_grub: "{{ grub_config.content | b64decode }}"
+
+- name: Build kernel parameter string
+  set_fact:
+    kernel_params_string: >-
+      {% for key, value in kernel_params.items() %}
+      {% if value is not none %}{{ key }}={{ value }} {% else %}{{ key }} {% endif %}
+      {% endfor %}
+
+- name: Update GRUB_CMDLINE_LINUX_DEFAULT
+  lineinfile:
+    path: /etc/default/grub
+    regexp: '^GRUB_CMDLINE_LINUX_DEFAULT='
+    line: 'GRUB_CMDLINE_LINUX_DEFAULT="quiet splash {{ kernel_params_string }}"'
+    backup: yes
+  notify: update_grub_config
+
+- name: Check if parameters need C-State configuration
+  set_fact:
+    cstate_params_present: "{{ 'intel_idle_max_cstate' in kernel_params or 'processor_max_cstate' in kernel_params }}"
+
+- name: Warning about C-State parameters
+  debug:
+    msg: |
+      WARNING: C-State kernel parameters are configured.
+      If system fails to boot, remove these parameters:
+      - intel_idle.max_cstate
+      - processor.max_cstate
+  when: cstate_params_present | bool
+
+- name: Display kernel parameters
+  debug:
+    msg: "Kernel parameters to be added: {{ kernel_params_string }}"

@@ -1,0 +1,32 @@
+---
+# Validate benchmark tools installation
+
+- name: Check CUDA samples
+  command: which bandwidthTest
+  register: bandwidth_test_check
+  failed_when: false
+  changed_when: false
+
+- name: Check NCCL tests
+  stat:
+    path: "{{ nccl_tests_dir }}/build/all_reduce_perf"
+  register: nccl_tests_check
+
+- name: Check perftest
+  command: which ib_write_bw
+  register: perftest_check
+  failed_when: false
+  changed_when: false
+
+- name: Display installation summary
+  debug:
+    msg:
+      - "Benchmark Tools Installation Summary:"
+      - "  CUDA bandwidthTest: {{ 'Installed' if bandwidth_test_check.rc == 0 else 'Not found' }}"
+      - "  NCCL tests: {{ 'Installed' if nccl_tests_check.stat.exists else 'Not found' }}"
+      - "  RDMA perftest: {{ 'Installed' if perftest_check.rc == 0 else 'Not found' }}"
+      - ""
+      - "Quick start:"
+      - "  gpu-benchmark bandwidth"
+      - "  gpu-benchmark nccl"
+      - "  gpu-benchmark baselines list"

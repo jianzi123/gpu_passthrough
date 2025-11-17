@@ -1,0 +1,72 @@
+---
+# NVIDIA Driver installation
+# Based on NVIDIA/ansible-role-nvidia-driver
+
+- name: Add NVIDIA CUDA repository GPG key (Debian/Ubuntu)
+  apt_key:
+    url: https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/3bf863cc.pub
+    state: present
+  when:
+    - ansible_os_family == "Debian"
+    - nvidia_driver_ubuntu_install_from_cuda_repo | bool
+
+- name: Add NVIDIA CUDA repository (Ubuntu 22.04)
+  apt_repository:
+    repo: "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/ /"
+    state: present
+    filename: cuda
+  when:
+    - ansible_distribution == "Ubuntu"
+    - ansible_distribution_version == "22.04"
+    - nvidia_driver_ubuntu_install_from_cuda_repo | bool
+
+- name: Add NVIDIA CUDA repository (Ubuntu 20.04)
+  apt_repository:
+    repo: "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /"
+    state: present
+    filename: cuda
+  when:
+    - ansible_distribution == "Ubuntu"
+    - ansible_distribution_version == "20.04"
+    - nvidia_driver_ubuntu_install_from_cuda_repo | bool
+
+- name: Update apt cache after adding CUDA repo
+  apt:
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install NVIDIA driver (Debian/Ubuntu)
+  apt:
+    name: "nvidia-driver-{{ nvidia_driver_version }}"
+    state: "{{ nvidia_driver_package_state }}"
+  when: ansible_os_family == "Debian"
+  notify: reboot_if_required
+
+- name: Install NVIDIA driver (RedHat/CentOS)
+  yum:
+    name: "nvidia-driver-{{ nvidia_driver_version }}"
+    state: "{{ nvidia_driver_package_state }}"
+  when: ansible_os_family == "RedHat"
+  notify: reboot_if_required
+
+- name: Load NVIDIA kernel module
+  modprobe:
+    name: nvidia
+    state: present
+  ignore_errors: yes
+
+- name: Verify NVIDIA driver installation
+  command: nvidia-smi
+  register: nvidia_smi_output
+  changed_when: false
+  failed_when: false
+
+- name: Display NVIDIA driver info
+  debug:
+    msg: "{{ nvidia_smi_output.stdout_lines }}"
+  when: nvidia_smi_output.rc == 0
+
+- name: Fail if nvidia-smi not working
+  fail:
+    msg: "NVIDIA driver installation failed. nvidia-smi command not available."
+  when: nvidia_smi_output.rc != 0

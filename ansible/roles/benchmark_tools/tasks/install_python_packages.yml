@@ -1,0 +1,13 @@
+---
+# Install Python packages for benchmarking
+
+- name: Install pip
+  apt:
+    name: python3-pip
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install Python benchmark packages
+  pip:
+    name: "{{ python_benchmark_packages }}"
+    state: present

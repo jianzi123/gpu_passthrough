@@ -1,0 +1,64 @@
+---
+# Post-installation validation
+# Quick check to ensure everything is working
+
+- name: Check nvidia-smi works
+  command: nvidia-smi
+  register: nvidia_smi_check
+  changed_when: false
+
+- name: Get GPU count
+  shell: nvidia-smi --query-gpu=count --format=csv,noheader,nounits | head -1
+  register: gpu_count
+  changed_when: false
+
+- name: Get GPU information
+  shell: nvidia-smi --query-gpu=index,name,driver_version,memory.total --format=csv,noheader
+  register: gpu_info
+  changed_when: false
+
+- name: Display GPU information
+  debug:
+    msg:
+      - "GPU Count: {{ gpu_count.stdout }}"
+      - "GPU Details:"
+      - "{{ gpu_info.stdout_lines }}"
+
+- name: Check CUDA availability (if installed)
+  shell: |
+    source /etc/profile.d/cuda.sh
+    nvcc --version
+  args:
+    executable: /bin/bash
+  register: cuda_check
+  changed_when: false
+  failed_when: false
+  when: install_cuda | bool
+
+- name: Display CUDA status
+  debug:
+    msg: "{{ cuda_check.stdout_lines }}"
+  when:
+    - install_cuda | bool
+    - cuda_check.rc == 0
+
+- name: Save installation summary
+  copy:
+    dest: "{{ log_directory }}/installation_summary.txt"
+    content: |
+      GPU Baseline Installation Summary
+      Generated: {{ ansible_date_time.iso8601 }}
+
+      System: {{ ansible_distribution }} {{ ansible_distribution_version }}
+      Kernel: {{ ansible_kernel }}
+
+      GPU Count: {{ gpu_count.stdout }}
+
+      GPU Details:
+      {{ gpu_info.stdout }}
+
+      {% if install_cuda and cuda_check.rc == 0 %}
+      CUDA Version:
+      {{ cuda_check.stdout }}
+      {% endif %}
+    mode: '0644'

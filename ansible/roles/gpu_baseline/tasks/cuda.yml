@@ -1,0 +1,39 @@
+---
+# CUDA Toolkit installation
+# Based on CSCfi/ansible-role-cuda
+
+- name: Install CUDA toolkit (Debian/Ubuntu)
+  apt:
+    name: "cuda-toolkit-{{ cuda_version }}"
+    state: "{{ cuda_package_state }}"
+  when: ansible_os_family == "Debian"
+
+- name: Install CUDA toolkit (RedHat/CentOS)
+  yum:
+    name: "cuda-toolkit-{{ cuda_version }}"
+    state: "{{ cuda_package_state }}"
+  when: ansible_os_family == "RedHat"
+
+- name: Create CUDA environment file
+  copy:
+    dest: /etc/profile.d/cuda.sh
+    content: |
+      export CUDA_HOME=/usr/local/cuda
+      export PATH=$CUDA_HOME/bin:$PATH
+      export LD_LIBRARY_PATH=$CUDA_HOME/lib64:$LD_LIBRARY_PATH
+    mode: '0644'
+
+- name: Verify CUDA installation
+  shell: |
+    source /etc/profile.d/cuda.sh
+    nvcc --version
+  args:
+    executable: /bin/bash
+  register: nvcc_output
+  changed_when: false
+  failed_when: false
+
+- name: Display CUDA version
+  debug:
+    msg: "{{ nvcc_output.stdout_lines }}"
+  when: nvcc_output.rc == 0

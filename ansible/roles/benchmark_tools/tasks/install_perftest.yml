@@ -1,0 +1,39 @@
+---
+# Install perftest for RDMA/InfiniBand bandwidth testing
+
+- name: Install perftest (Debian/Ubuntu)
+  apt:
+    name: perftest
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Check if GPUDirect RDMA is needed
+  stat:
+    path: /usr/local/cuda
+  register: cuda_installed
+
+- name: Clone perftest for GPUDirect RDMA build
+  git:
+    repo: https://github.com/linux-rdma/perftest.git
+    dest: /opt/perftest
+  when: cuda_installed.stat.exists
+
+- name: Build perftest with CUDA support
+  shell: |
+    cd /opt/perftest
+    ./autogen.sh
+    ./configure --enable-cuda --with-cuda=/usr/local/cuda
+    make
+    make install
+  args:
+    creates: /usr/local/bin/ib_write_bw
+  when: cuda_installed.stat.exists
+
+- name: Display perftest commands
+  debug:
+    msg:
+      - "RDMA testing tools installed:"
+      - "  ib_write_bw - Write bandwidth test"
+      - "  ib_read_bw - Read bandwidth test"
+      - "  ib_send_bw - Send bandwidth test"
+      - "For GPUDirect RDMA: add --use_cuda=<gpu_index>"

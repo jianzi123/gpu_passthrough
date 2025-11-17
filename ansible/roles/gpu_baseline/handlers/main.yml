@@ -1,0 +1,24 @@
+---
+# Handlers for gpu_baseline role
+
+- name: update_initramfs
+  command: update-initramfs -u
+  listen: update_initramfs
+
+- name: update_grub
+  command: update-grub
+  listen: update_grub
+
+- name: reboot_if_required
+  reboot:
+    msg: "{{ reboot_message }}"
+    reboot_timeout: "{{ reboot_timeout }}"
+  when: not nvidia_driver_skip_reboot | bool
+  listen: reboot_if_required
+
+- name: restart_docker
+  systemd:
+    name: docker
+    state: restarted
+    daemon_reload: yes
+  listen: restart_docker

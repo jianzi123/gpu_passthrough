@@ -1,0 +1,178 @@
+---
+################################################################################
+# Slow Node Detection Role - Main Tasks
+################################################################################
+
+- name: Create local output directory
+  file:
+    path: "{{ slow_node_detection_output_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  run_once: true
+
+- name: Create results archive directory
+  file:
+    path: "{{ slow_node_detection_results_archive_dir }}"
+    state: directory
+    mode: '0755'
+  delegate_to: localhost
+  run_once: true
+  when: slow_node_detection_keep_raw_results
+
+- name: Ensure scripts directory exists on all nodes
+  file:
+    path: "{{ slow_node_detection_scripts_dir }}"
+    state: directory
+    mode: '0755'
+
+- name: Copy detection scripts to all nodes
+  copy:
+    src: "{{ slow_node_detection_local_scripts_dir }}/{{ item }}"
+    dest: "{{ slow_node_detection_scripts_dir }}/{{ item }}"
+    mode: '0755'
+  loop:
+    - intra_node_bandwidth_check.sh
+    - inter_node_nccl_check.sh
+    - detect_slow_nodes.sh
+
+- name: Generate nodes inventory file
+  template:
+    src: nodes_inventory.j2
+    dest: "{{ slow_node_detection_output_dir }}/nodes.txt"
+  delegate_to: localhost
+  run_once: true
+
+- name: Run intra-node bandwidth checks
+  shell: |
+    {{ slow_node_detection_scripts_dir }}/intra_node_bandwidth_check.sh \
+      -o {{ slow_node_detection_output_dir }}/intra_{{ inventory_hostname }} \
+      -t {{ slow_node_detection_threshold }} \
+      > {{ slow_node_detection_output_dir }}/intra_{{ inventory_hostname }}_console.log 2>&1
+  args:
+    executable: /bin/bash
+  register: intra_check_result
+  ignore_errors: yes
+  when: not slow_node_detection_skip_intra
+  async: 3600  # 1 hour timeout
+  poll: "{{ 0 if slow_node_detection_parallel else 30 }}"
+
+- name: Wait for intra-node checks to complete (if parallel)
+  async_status:
+    jid: "{{ intra_check_result.ansible_job_id }}"
+  register: intra_job_result
+  until: intra_job_result.finished
+  retries: 120
+  delay: 30
+  when:
+    - not slow_node_detection_skip_intra
+    - slow_node_detection_parallel
+    - intra_check_result.ansible_job_id is defined
+
+- name: Collect intra-node results to control node
+  synchronize:
+    src: "{{ slow_node_detection_output_dir }}/intra_{{ inventory_hostname }}"
+    dest: "{{ slow_node_detection_output_dir }}/collected_results/"
+    mode: pull
+  when: not slow_node_detection_skip_intra
+
+- name: Run inter-node NCCL checks (from first node)
+  shell: |
+    {{ slow_node_detection_scripts_dir }}/inter_node_nccl_check.sh \
+      -n {{ slow_node_detection_output_dir }}/nodes.txt \
+      -o {{ slow_node_detection_output_dir }}/inter_node_results \
+      -t {{ slow_node_detection_threshold }} \
+      -i {{ slow_node_detection_nccl_iterations }} \
+      -s {{ slow_node_detection_nccl_message_size }} \
+      --mpi-path {{ slow_node_detection_mpi_path }} \
+      --nccl-tests-path {{ slow_node_detection_nccl_tests_path }} \
+      {{ '--pairwise' if slow_node_detection_pairwise else '' }} \
+      {{ '--binary-search' if slow_node_detection_binary_search else '' }} \
+      > {{ slow_node_detection_output_dir }}/inter_node_console.log 2>&1
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ groups['all'][0] }}"
+  run_once: true
+  register: inter_check_result
+  ignore_errors: yes
+  when: not slow_node_detection_skip_inter
+
+- name: Collect inter-node results to control node
+  synchronize:
+    src: "{{ slow_node_detection_output_dir }}/inter_node_results"
+    dest: "{{ slow_node_detection_output_dir }}/collected_results/"
+    mode: pull
+  delegate_to: "{{ groups['all'][0] }}"
+  run_once: true
+  when: not slow_node_detection_skip_inter
+
+- name: Generate comprehensive summary report
+  template:
+    src: "{{ slow_node_detection_report_template }}"
+    dest: "{{ slow_node_detection_output_dir }}/slow_node_detection_report.html"
+  delegate_to: localhost
+  run_once: true
+  when: slow_node_detection_generate_html_report
+
+- name: Analyze results and identify slow nodes
+  shell: |
+    # Parse all results and create summary
+    echo "=== Slow Node Detection Summary ===" > {{ slow_node_detection_output_dir }}/summary.txt
+    echo "Timestamp: $(date)" >> {{ slow_node_detection_output_dir }}/summary.txt
+    echo "" >> {{ slow_node_detection_output_dir }}/summary.txt
+
+    # Check for slow intra-node connections
+    slow_intra=$(find {{ slow_node_detection_output_dir }}/collected_results -name "slow_connections_*.txt" -type f 2>/dev/null | wc -l)
+    if [ $slow_intra -gt 0 ]; then
+      echo "⚠ Slow intra-node connections detected on $slow_intra node(s)" >> {{ slow_node_detection_output_dir }}/summary.txt
+      find {{ slow_node_detection_output_dir }}/collected_results -name "slow_connections_*.txt" -type f -exec echo "  {}" \; >> {{ slow_node_detection_output_dir }}/summary.txt
+    else
+      echo "✓ No slow intra-node connections detected" >> {{ slow_node_detection_output_dir }}/summary.txt
+    fi
+
+    echo "" >> {{ slow_node_detection_output_dir }}/summary.txt
+
+    # Check for slow inter-node pairs
+    if [ -f {{ slow_node_detection_output_dir }}/collected_results/inter_node_results/pairwise_results_*.csv ]; then
+      slow_pairs=$(grep -c "SLOW" {{ slow_node_detection_output_dir }}/collected_results/inter_node_results/pairwise_results_*.csv 2>/dev/null || echo "0")
+      if [ "$slow_pairs" -gt 0 ]; then
+        echo "⚠ Slow inter-node pairs detected: $slow_pairs" >> {{ slow_node_detection_output_dir }}/summary.txt
+      else
+        echo "✓ No slow inter-node pairs detected" >> {{ slow_node_detection_output_dir }}/summary.txt
+      fi
+    fi
+
+    cat {{ slow_node_detection_output_dir }}/summary.txt
+  args:
+    executable: /bin/bash
+  delegate_to: localhost
+  run_once: true
+  register: summary_result
+
+- name: Display summary
+  debug:
+    msg: "{{ summary_result.stdout_lines }}"
+  delegate_to: localhost
+  run_once: true
+
+- name: Archive results
+  archive:
+    path: "{{ slow_node_detection_output_dir }}"
+    dest: "{{ slow_node_detection_results_archive_dir }}/slow_node_detection_{{ ansible_date_time.epoch }}.tar.gz"
+  delegate_to: localhost
+  run_once: true
+  when: slow_node_detection_keep_raw_results
+
+- name: Send notification email (if configured)
+  mail:
+    host: localhost
+    port: 25
+    to: "{{ slow_node_detection_notification_email }}"
+    subject: "Slow Node Detection Results - {{ ansible_date_time.date }}"
+    body: "{{ summary_result.stdout }}"
+  delegate_to: localhost
+  run_once: true
+  when:
+    - slow_node_detection_send_notifications
+    - slow_node_detection_notification_email != ""
+  ignore_errors: yes

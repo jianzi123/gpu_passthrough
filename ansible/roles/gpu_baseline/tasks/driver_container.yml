@@ -1,0 +1,107 @@
+---
+# Install NVIDIA driver using driver container
+# Based on NVIDIA GPU Operator architecture
+
+- name: Check if Docker is installed
+  command: which docker
+  register: docker_check
+  changed_when: false
+  failed_when: false
+
+- name: Fail if Docker is not installed
+  fail:
+    msg: "Docker is required for driver container installation. Please install Docker first."
+  when: docker_check.rc != 0
+
+- name: Pull NVIDIA driver container image
+  docker_image:
+    name: "{{ driver_container_image }}"
+    tag: "{{ driver_container_tag }}"
+    source: pull
+  register: driver_image_pull
+  retries: 3
+  delay: 10
+
+- name: Display driver container image info
+  debug:
+    msg: "Pulled driver container: {{ driver_container_image }}:{{ driver_container_tag }}"
+
+- name: Create driver container systemd service
+  template:
+    src: nvidia-driver-container.service.j2
+    dest: /etc/systemd/system/nvidia-driver.service
+    mode: '0644'
+  notify: reload systemd
+
+- name: Create driver container configuration directory
+  file:
+    path: /etc/nvidia-driver
+    state: directory
+    mode: '0755'
+
+- name: Create driver container configuration
+  copy:
+    content: |
+      DRIVER_VERSION={{ nvidia_driver_version }}
+      DRIVER_IMAGE={{ driver_container_image }}:{{ driver_container_tag }}
+      KERNEL_VERSION={{ ansible_kernel }}
+    dest: /etc/nvidia-driver/config
+    mode: '0644'
+
+- name: Enable and start driver container service
+  systemd:
+    name: nvidia-driver
+    enabled: yes
+    state: started
+    daemon_reload: yes
+  register: driver_service
+
+- name: Wait for driver to load
+  command: nvidia-smi
+  register: nvidia_smi_check
+  until: nvidia_smi_check.rc == 0
+  retries: 30
+  delay: 2
+  changed_when: false
+  failed_when: false
+
+- name: Check driver status
+  command: nvidia-smi --query-gpu=driver_version --format=csv,noheader
+  register: driver_version_check
+  changed_when: false
+  when: nvidia_smi_check.rc == 0
+
+- name: Display installed driver version
+  debug:
+    msg: "NVIDIA driver version: {{ driver_version_check.stdout }}"
+  when: nvidia_smi_check.rc == 0
+
+- name: Create driver container health check script
+  copy:
+    content: |
+      #!/bin/bash
+      # Driver container health check
+
+      # Check if container is running
+      if ! docker ps | grep -q nvidia-driver; then
+        echo "ERROR: Driver container is not running"
+        exit 1
+      fi
+
+      # Check if nvidia-smi works
+      if ! nvidia-smi &> /dev/null; then
+        echo "ERROR: nvidia-smi failed"
+        exit 1
+      fi
+
+      echo "Driver container is healthy"
+      exit 0
+    dest: /usr/local/bin/check-driver-container.sh
+    mode: '0755'
+
+- name: Log driver container installation
+  lineinfile:
+    path: "{{ log_directory }}/driver_installation.log"
+    line: "{{ ansible_date_time.iso8601 }} - Driver container installed: {{ driver_container_image }}:{{ driver_container_tag }}"
+    create: yes
+    mode: '0644'

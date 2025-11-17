@@ -1,0 +1,69 @@
+---
+# Deploy benchmark scripts to the system
+
+- name: Create benchmark scripts directory
+  file:
+    path: /opt/gpu-benchmarks
+    state: directory
+    mode: '0755'
+
+- name: Copy bandwidth test script
+  copy:
+    src: "{{ playbook_dir }}/../scripts/validation/bandwidth_test.sh"
+    dest: /opt/gpu-benchmarks/bandwidth_test.sh
+    mode: '0755'
+  ignore_errors: yes
+
+- name: Copy NCCL benchmark script
+  copy:
+    src: "{{ playbook_dir }}/../scripts/benchmarks/nccl_benchmark.sh"
+    dest: /opt/gpu-benchmarks/nccl_benchmark.sh
+    mode: '0755'
+  ignore_errors: yes
+
+- name: Copy Megatron benchmark script
+  copy:
+    src: "{{ playbook_dir }}/../scripts/benchmarks/megatron_benchmark.sh"
+    dest: /opt/gpu-benchmarks/megatron_benchmark.sh
+    mode: '0755'
+  ignore_errors: yes
+
+- name: Copy performance baseline database
+  copy:
+    src: "{{ playbook_dir }}/../scripts/utils/performance_baselines.py"
+    dest: /opt/gpu-benchmarks/performance_baselines.py
+    mode: '0755'
+  ignore_errors: yes
+
+- name: Create benchmark wrapper script
+  copy:
+    dest: /usr/local/bin/gpu-benchmark
+    content: |
+      #!/bin/bash
+      # GPU Benchmark Suite Wrapper
+
+      case "$1" in
+        bandwidth)
+          /opt/gpu-benchmarks/bandwidth_test.sh "$@"
+          ;;
+        nccl)
+          /opt/gpu-benchmarks/nccl_benchmark.sh "$@"
+          ;;
+        megatron)
+          /opt/gpu-benchmarks/megatron_benchmark.sh "$@"
+          ;;
+        baselines)
+          python3 /opt/gpu-benchmarks/performance_baselines.py "$@"
+          ;;
+        *)
+          echo "GPU Benchmark Suite"
+          echo "Usage: gpu-benchmark [bandwidth|nccl|megatron|baselines] [options]"
+          echo ""
+          echo "Commands:"
+          echo "  bandwidth - Test PCIe, NVLink, RDMA bandwidth"
+          echo "  nccl      - Test NCCL collective operations"
+          echo "  megatron  - Run Megatron-LM training benchmark"
+          echo "  baselines - View performance baselines"
+          ;;
+      esac
+    mode: '0755'

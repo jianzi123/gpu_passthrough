@@ -1,0 +1,78 @@
+---
+# Container runtime (Docker/containerd) with NVIDIA GPU support
+# Based on NVIDIA/ansible-role-nvidia-docker and datadrivers/ansible-role-docker
+
+- name: Install Docker (when docker runtime selected)
+  block:
+    - name: Add Docker GPG key (Debian/Ubuntu)
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Add Docker repository (Debian/Ubuntu)
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install Docker packages
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian"
+
+  when: container_runtime == "docker"
+
+- name: Add NVIDIA Container Toolkit repository GPG key
+  apt_key:
+    url: https://nvidia.github.io/libnvidia-container/gpgkey
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Add NVIDIA Container Toolkit repository
+  apt_repository:
+    repo: "deb https://nvidia.github.io/libnvidia-container/stable/ubuntu{{ ansible_distribution_version | replace('.', '') }}/$(ARCH) /"
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Update apt cache
+  apt:
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install NVIDIA Container Toolkit
+  apt:
+    name: nvidia-container-toolkit
+    state: "{{ nvidia_container_toolkit_package_state }}"
+  when: ansible_os_family == "Debian"
+
+- name: Configure Docker daemon for NVIDIA runtime
+  template:
+    src: daemon.json.j2
+    dest: /etc/docker/daemon.json
+    mode: '0644'
+  when: container_runtime == "docker"
+  notify: restart_docker
+
+- name: Flush handlers to restart docker
+  meta: flush_handlers
+
+- name: Test Docker GPU access
+  command: docker run --rm --gpus all nvidia/cuda:12.2.0-base-ubuntu22.04 nvidia-smi
+  register: docker_gpu_test
+  changed_when: false
+  failed_when: false
+  when: container_runtime == "docker"
+
+- name: Display Docker GPU test result
+  debug:
+    msg: "{{ docker_gpu_test.stdout_lines }}"
+  when:
+    - container_runtime == "docker"
+    - docker_gpu_test.rc == 0

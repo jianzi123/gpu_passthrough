@@ -1,0 +1,53 @@
+---
+################################################################################
+# Playbook: Detect Slow Nodes in GPU Cluster
+#
+# Purpose: Run comprehensive slow node detection including:
+#   - Intra-node bandwidth checks (NVLink, PCIe)
+#   - Inter-node NCCL communication tests
+#   - Statistical analysis and reporting
+#
+# Usage:
+#   # Basic usage
+#   ansible-playbook -i inventory detect_slow_nodes.yml
+#
+#   # With custom threshold
+#   ansible-playbook -i inventory detect_slow_nodes.yml \
+#     -e slow_node_detection_threshold=85
+#
+#   # Skip intra-node checks
+#   ansible-playbook -i inventory detect_slow_nodes.yml \
+#     -e slow_node_detection_skip_intra=true
+#
+#   # Enable pairwise and binary search
+#   ansible-playbook -i inventory detect_slow_nodes.yml \
+#     -e slow_node_detection_pairwise=true \
+#     -e slow_node_detection_binary_search=true
+#
+################################################################################
+
+- name: Detect Slow Nodes in GPU Cluster
+  hosts: all
+  become: yes
+  gather_facts: yes
+
+  roles:
+    - role: slow_node_detection
+
+  post_tasks:
+    - name: Display final summary
+      debug:
+        msg: |
+          ========================================
+          Slow Node Detection Complete
+          ========================================
+
+          Results directory: {{ slow_node_detection_output_dir }}
+
+          Next steps:
+          1. Review the summary report
+          2. Investigate any detected slow nodes
+          3. Address hardware or configuration issues
+          4. Re-run detection to verify fixes
+      run_once: true
+      delegate_to: localhost

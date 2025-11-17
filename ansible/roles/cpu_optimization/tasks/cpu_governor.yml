@@ -1,0 +1,53 @@
+---
+# Configure CPU governor
+
+- name: Set CPU governor to {{ cpu_governor }}
+  shell: |
+    for cpu in /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor; do
+        if [ -f "$cpu" ]; then
+            echo {{ cpu_governor }} > $cpu
+        fi
+    done
+  changed_when: true
+
+- name: Configure cpufrequtils default governor (Debian/Ubuntu)
+  lineinfile:
+    path: /etc/default/cpufrequtils
+    line: 'GOVERNOR="{{ cpu_governor }}"'
+    create: yes
+    mode: '0644'
+  when: ansible_os_family == "Debian"
+
+- name: Create cpupower systemd service (if not exists)
+  copy:
+    dest: /etc/systemd/system/cpupower.service
+    content: |
+      [Unit]
+      Description=Set CPU frequency scaling governor
+      After=multi-user.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/bin/cpupower frequency-set -g {{ cpu_governor }}
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  notify: reload_systemd
+
+- name: Enable cpupower service
+  systemd:
+    name: cpupower
+    enabled: yes
+    state: started
+  ignore_errors: yes
+
+- name: Verify CPU governor
+  shell: cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
+  register: current_governor
+  changed_when: false
+
+- name: Display current governor
+  debug:
+    msg: "Current CPU governor: {{ current_governor.stdout }}"

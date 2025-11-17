@@ -1,0 +1,45 @@
+---
+# Main tasks for CPU optimization role
+# Optimizes CPU configuration for GPU workloads
+
+- name: Include OS-specific variables
+  include_vars: "{{ ansible_os_family }}.yml"
+  ignore_errors: yes
+  tags: always
+
+- name: Install CPU performance tools
+  include_tasks: install_tools.yml
+  when: install_cpu_tools | bool
+  tags: install
+
+- name: Configure CPU governor
+  include_tasks: cpu_governor.yml
+  when: set_cpu_governor | bool
+  tags: cpu_governor
+
+- name: Configure Turbo Boost
+  include_tasks: turbo_boost.yml
+  when: enable_turbo_boost | bool
+  tags: turbo_boost
+
+- name: Configure kernel parameters
+  include_tasks: kernel_params.yml
+  tags: kernel_params
+
+- name: Configure memory settings
+  include_tasks: memory.yml
+  tags: memory
+
+- name: Configure NUMA
+  include_tasks: numa.yml
+  when: optimize_numa | bool
+  tags: numa
+
+- name: Create performance tuning service
+  include_tasks: perf_service.yml
+  when: install_perf_service | bool
+  tags: perf_service
+
+- name: Validation checks
+  include_tasks: validate.yml
+  tags: validate

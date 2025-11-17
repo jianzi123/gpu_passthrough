@@ -1,0 +1,28 @@
+---
+# Group variables for GPU nodes
+# These override role defaults
+
+# NVIDIA Driver Configuration
+nvidia_driver_version: "535"
+nvidia_driver_ubuntu_install_from_cuda_repo: true
+nvidia_driver_skip_reboot: false
+
+# CUDA Configuration
+install_cuda: true
+cuda_version: "12-2"
+
+# Container Runtime
+install_container_runtime: true
+container_runtime: "docker"  # Options: docker, containerd
+docker_default_runtime: "nvidia"
+
+# GPU Configuration
+gpu_persistence_mode: true
+# gpu_power_limit: 250  # Uncomment and set if needed
+
+# Validation
+run_post_install_validation: true
+validation_level: "quick"
+
+# Logging
+log_directory: "/var/log/gpu_baseline"

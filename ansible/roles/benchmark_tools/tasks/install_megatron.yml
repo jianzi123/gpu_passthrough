@@ -1,0 +1,25 @@
+---
+# Install Megatron-LM (optional)
+
+- name: Clone Megatron-LM
+  git:
+    repo: https://github.com/NVIDIA/Megatron-LM.git
+    dest: "{{ megatron_dir }}"
+    version: main
+
+- name: Install Megatron-LM requirements
+  pip:
+    requirements: "{{ megatron_dir }}/requirements.txt"
+    state: present
+
+- name: Create Megatron environment file
+  copy:
+    dest: /etc/profile.d/megatron.sh
+    content: |
+      export MEGATRON_DIR={{ megatron_dir }}
+      export PYTHONPATH={{ megatron_dir }}:$PYTHONPATH
+    mode: '0644'
+
+- name: Display Megatron-LM location
+  debug:
+    msg: "Megatron-LM installed at: {{ megatron_dir }}"

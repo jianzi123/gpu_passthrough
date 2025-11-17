@@ -1,0 +1,43 @@
+---
+################################################################################
+# Slow Node Detection Role - Default Variables
+################################################################################
+
+# Output directory for results
+slow_node_detection_output_dir: "/tmp/slow_node_detection_{{ ansible_date_time.epoch }}"
+
+# Performance threshold (percentage of expected baseline)
+slow_node_detection_threshold: 90
+
+# NCCL test configuration
+slow_node_detection_nccl_iterations: 10
+slow_node_detection_nccl_message_size: "8G"
+
+# Test options
+slow_node_detection_skip_intra: false
+slow_node_detection_skip_inter: false
+slow_node_detection_pairwise: true
+slow_node_detection_binary_search: true
+slow_node_detection_parallel: true
+
+# Script paths
+slow_node_detection_scripts_dir: "/opt/gpu_passthrough/scripts/validation"
+slow_node_detection_local_scripts_dir: "{{ playbook_dir }}/../scripts/validation"
+
+# MPI configuration
+slow_node_detection_mpi_path: "/usr/local/openmpi"
+
+# NCCL tests path
+slow_node_detection_nccl_tests_path: "/usr/local/nccl-tests/build"
+
+# Results retention
+slow_node_detection_keep_raw_results: true
+slow_node_detection_results_archive_dir: "/var/log/slow_node_detection"
+
+# Notification settings
+slow_node_detection_send_notifications: false
+slow_node_detection_notification_email: ""
+
+# Reporting
+slow_node_detection_generate_html_report: true
+slow_node_detection_report_template: "slow_node_report.html.j2"

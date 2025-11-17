@@ -1,0 +1,68 @@
+---
+# GPU Baseline Setup Playbook
+# Installs NVIDIA drivers, CUDA, and container runtime with GPU support
+# Based on NVIDIA official roles and community best practices
+
+- name: Setup GPU Baseline on Target Hosts
+  hosts: gpu_nodes
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # Override these variables in inventory or command line
+    nvidia_driver_version: "535"
+    install_cuda: true
+    cuda_version: "12-2"
+    install_container_runtime: true
+    container_runtime: "docker"
+
+  pre_tasks:
+    - name: Display target host information
+      debug:
+        msg:
+          - "Hostname: {{ ansible_hostname }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel: {{ ansible_kernel }}"
+
+    - name: Verify system requirements
+      assert:
+        that:
+          - ansible_distribution in ['Ubuntu', 'Debian', 'CentOS', 'RedHat']
+          - ansible_distribution_major_version | int >= 20 or ansible_distribution_major_version | int >= 8
+        fail_msg: "Unsupported OS. Requires Ubuntu 20.04+, Debian 10+, or RHEL/CentOS 8+"
+
+    - name: Check available disk space
+      shell: df -BG / | tail -1 | awk '{print $4}' | sed 's/G//'
+      register: disk_space
+      changed_when: false
+
+    - name: Ensure sufficient disk space
+      assert:
+        that:
+          - disk_space.stdout | int > 10
+        fail_msg: "Insufficient disk space. Need at least 10GB free, have {{ disk_space.stdout }}GB"
+
+  roles:
+    - role: gpu_baseline
+
+  post_tasks:
+    - name: Display installation summary
+      debug:
+        msg:
+          - "GPU baseline installation completed!"
+          - "Check /var/log/gpu_baseline/installation_summary.txt for details"
+
+    - name: Run quick validation
+      command: nvidia-smi
+      register: final_check
+      changed_when: false
+
+    - name: Display nvidia-smi output
+      debug:
+        var: final_check.stdout_lines
+
+  handlers:
+    - name: Final reboot if needed
+      reboot:
+        msg: "Final reboot after GPU baseline setup"
+        reboot_timeout: 600

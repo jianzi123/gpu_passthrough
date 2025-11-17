@@ -1,0 +1,38 @@
+---
+# Install benchmark and testing tools for GPU systems
+
+- name: Install system dependencies
+  include_tasks: install_dependencies.yml
+  tags: dependencies
+
+- name: Install CUDA samples
+  include_tasks: install_cuda_samples.yml
+  when: install_cuda_samples | bool
+  tags: cuda_samples
+
+- name: Install NCCL tests
+  include_tasks: install_nccl_tests.yml
+  when: install_nccl_tests | bool
+  tags: nccl_tests
+
+- name: Install perftest (RDMA)
+  include_tasks: install_perftest.yml
+  when: install_perftest | bool
+  tags: perftest
+
+- name: Install Megatron-LM
+  include_tasks: install_megatron.yml
+  when: install_megatron | bool
+  tags: megatron
+
+- name: Install Python packages
+  include_tasks: install_python_packages.yml
+  tags: python_packages
+
+- name: Deploy benchmark scripts
+  include_tasks: deploy_scripts.yml
+  tags: deploy_scripts
+
+- name: Validation
+  include_tasks: validate.yml
+  tags: validate

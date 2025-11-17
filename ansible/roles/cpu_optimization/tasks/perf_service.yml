@@ -1,0 +1,33 @@
+---
+# Create performance tuning systemd service
+
+- name: Create performance tuning script
+  template:
+    src: perf_tuning.sh.j2
+    dest: /usr/local/bin/gpu-perf-tune.sh
+    mode: '0755'
+
+- name: Create systemd service for performance tuning
+  copy:
+    dest: "/etc/systemd/system/{{ perf_service_name }}.service"
+    content: |
+      [Unit]
+      Description=GPU Server Performance Tuning
+      After=multi-user.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/bin/gpu-perf-tune.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: '0644'
+  notify: reload_systemd
+
+- name: Enable and start performance tuning service
+  systemd:
+    name: "{{ perf_service_name }}"
+    enabled: yes
+    state: started
+    daemon_reload: yes

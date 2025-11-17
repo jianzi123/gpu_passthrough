@@ -1,0 +1,41 @@
+---
+# NUMA configuration and validation
+
+- name: Check NUMA availability
+  command: numactl --hardware
+  register: numa_info
+  changed_when: false
+  failed_when: false
+
+- name: Display NUMA information
+  debug:
+    var: numa_info.stdout_lines
+  when: numa_info.rc == 0
+
+- name: Get NUMA node count
+  shell: numactl --hardware | grep "available:" | awk '{print $2}'
+  register: numa_nodes
+  changed_when: false
+  failed_when: false
+
+- name: Store NUMA node count
+  set_fact:
+    numa_node_count: "{{ numa_nodes.stdout | default('0') | int }}"
+
+- name: NUMA optimization recommendations
+  debug:
+    msg:
+      - "NUMA Nodes detected: {{ numa_node_count }}"
+      - "For GPU workloads, consider:"
+      - "  1. Pin processes to NUMA nodes using numactl"
+      - "  2. Ensure GPU and CPU are on same NUMA node"
+      - "  3. Use 'numactl --cpunodebind=N --membind=N' for training"
+      - "  4. Check GPU NUMA affinity with: nvidia-smi topo -m"
+  when: numa_node_count | int > 0
+
+- name: Create NUMA helper script
+  template:
+    src: numa_helper.sh.j2
+    dest: /usr/local/bin/numa-gpu-info
+    mode: '0755'
+  when: numa_node_count | int > 0

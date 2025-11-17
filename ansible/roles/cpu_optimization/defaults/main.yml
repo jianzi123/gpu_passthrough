@@ -1,0 +1,57 @@
+---
+# CPU Optimization Role Defaults
+# Based on 2024-2025 best practices for GPU workloads
+
+# CPU Governor
+cpu_governor: "performance"
+set_cpu_governor: true
+
+# Turbo Boost / Turbo Core
+enable_turbo_boost: true
+
+# C-States
+disable_deep_cstates: true
+max_cstate: 1  # Only allow C0/C1
+
+# NUMA
+optimize_numa: true
+
+# Transparent Huge Pages
+thp_enabled: "always"  # Options: always, madvise, never
+thp_defrag: "madvise"  # Options: always, madvise, never
+
+# Memory
+vm_swappiness: 10
+vm_dirty_ratio: 40
+vm_dirty_background_ratio: 10
+
+# Kernel Parameters
+kernel_params:
+  # IOMMU
+  intel_iommu: "on"
+  amd_iommu: "on"
+  iommu: "pt"
+
+  # C-States (optional, can cause boot issues on some systems)
+  intel_idle_max_cstate: "1"
+  processor_max_cstate: "1"
+
+  # PCIe
+  pcie_aspm: "off"  # Disable PCIe power saving
+
+  # Huge Pages (optional)
+  # default_hugepagesz: "1G"
+  # hugepagesz: "1G"
+  # hugepages: "32"
+
+# Performance Tuning Service
+install_perf_service: true
+perf_service_name: "gpu-server-performance"
+
+# Install required packages
+install_cpu_tools: true
+cpu_packages:
+  - cpufrequtils
+  - linux-tools-generic
+  - numactl
+  - sysstat

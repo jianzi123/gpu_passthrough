@@ -1,0 +1,42 @@
+---
+# Configure Turbo Boost / Turbo Core
+
+- name: Check for Intel Turbo Boost
+  stat:
+    path: /sys/devices/system/cpu/intel_pstate/no_turbo
+  register: intel_turbo_file
+
+- name: Enable Intel Turbo Boost
+  shell: echo 0 > /sys/devices/system/cpu/intel_pstate/no_turbo
+  when:
+    - intel_turbo_file.stat.exists
+    - enable_turbo_boost | bool
+  changed_when: true
+
+- name: Check for AMD Turbo Core
+  stat:
+    path: /sys/devices/system/cpu/cpufreq/boost
+  register: amd_boost_file
+
+- name: Enable AMD Turbo Core
+  shell: echo 1 > /sys/devices/system/cpu/cpufreq/boost
+  when:
+    - amd_boost_file.stat.exists
+    - enable_turbo_boost | bool
+  changed_when: true
+
+- name: Verify Turbo status (Intel)
+  shell: cat /sys/devices/system/cpu/intel_pstate/no_turbo
+  register: intel_turbo_status
+  when: intel_turbo_file.stat.exists
+  changed_when: false
+
+- name: Verify Turbo status (AMD)
+  shell: cat /sys/devices/system/cpu/cpufreq/boost
+  register: amd_turbo_status
+  when: amd_boost_file.stat.exists
+  changed_when: false
+
+- name: Display Turbo status
+  debug:
+    msg: "{{ 'Intel Turbo: ' + ('Enabled' if intel_turbo_status.stdout == '0' else 'Disabled') if intel_turbo_file.stat.exists else 'AMD Boost: ' + ('Enabled' if amd_turbo_status.stdout == '1' else 'Disabled') if amd_boost_file.stat.exists else 'Turbo technology not detected' }}"

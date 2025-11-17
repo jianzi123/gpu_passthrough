@@ -1,0 +1,28 @@
+---
+# Install CPU performance tools
+
+- name: Install CPU tools (Debian/Ubuntu)
+  apt:
+    name: "{{ cpu_packages }}"
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install CPU tools (RedHat/CentOS)
+  yum:
+    name:
+      - kernel-tools
+      - numactl
+      - sysstat
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Ensure cpupower is available
+  command: which cpupower
+  register: cpupower_check
+  failed_when: false
+  changed_when: false
+
+- name: Display cpupower status
+  debug:
+    msg: "cpupower is {{ 'available' if cpupower_check.rc == 0 else 'not available' }}"

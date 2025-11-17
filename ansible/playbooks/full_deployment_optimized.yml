@@ -1,0 +1,107 @@
+---
+# Full GPU Deployment with CPU Optimization
+# Complete deployment including baseline, CPU optimization, and validation
+
+- name: Full GPU Server Deployment with Optimization
+  hosts: gpu_nodes
+  become: yes
+  gather_facts: yes
+
+  vars:
+    # GPU Baseline
+    nvidia_driver_version: "535"
+    install_cuda: true
+    cuda_version: "12-2"
+    install_container_runtime: true
+
+    # CPU Optimization
+    cpu_governor: "performance"
+    enable_turbo_boost: true
+    optimize_numa: true
+
+  pre_tasks:
+    - name: Display deployment information
+      debug:
+        msg:
+          - "=========================================="
+          - "Full GPU Server Deployment"
+          - "=========================================="
+          - "Target: {{ ansible_hostname }}"
+          - "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "Kernel: {{ ansible_kernel }}"
+          - "CPUs: {{ ansible_processor_vcpus }}"
+          - "Memory: {{ ansible_memtotal_mb }}MB"
+          - "=========================================="
+
+    - name: Check system requirements
+      assert:
+        that:
+          - ansible_memtotal_mb | int > 8192
+          - ansible_processor_vcpus | int >= 4
+        fail_msg: "Minimum requirements: 8GB RAM, 4 CPU cores"
+
+  roles:
+    - role: cpu_optimization
+      tags: cpu_optimization
+
+    - role: gpu_baseline
+      tags: gpu_baseline
+
+  post_tasks:
+    - name: Run comprehensive system validation
+      script: ../../scripts/validation/system_check.sh /tmp/deployment_validation.json
+      register: system_validation
+      failed_when: false
+      tags: validation
+
+    - name: Display validation summary
+      debug:
+        var: system_validation.stdout_lines
+      when: system_validation is defined
+      tags: validation
+
+    - name: Reboot recommendation
+      debug:
+        msg:
+          - "=========================================="
+          - "IMPORTANT: Reboot Required"
+          - "=========================================="
+          - "Kernel parameters have been updated."
+          - "Please reboot the system for changes to take effect:"
+          - "  sudo reboot"
+          - ""
+          - "After reboot, run validation:"
+          - "  ansible-playbook playbooks/validate_gpu.yml -e 'level=standard'"
+      tags: always
+
+    - name: Create deployment summary
+      copy:
+        dest: /var/log/gpu-deployment-summary.txt
+        content: |
+          GPU Server Deployment Summary
+          ======================================
+          Deployment Time: {{ ansible_date_time.iso8601 }}
+          Hostname: {{ ansible_hostname }}
+
+          System Information:
+          - OS: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          - Kernel: {{ ansible_kernel }}
+          - CPU: {{ ansible_processor_vcpus }} cores
+          - Memory: {{ ansible_memtotal_mb }}MB
+
+          Components Installed:
+          - NVIDIA Driver: {{ nvidia_driver_version }}
+          - CUDA: {{ 'Yes (' + cuda_version + ')' if install_cuda else 'No' }}
+          - Container Runtime: {{ 'Yes' if install_container_runtime else 'No' }}
+
+          Optimizations Applied:
+          - CPU Governor: {{ cpu_governor }}
+          - Turbo Boost: {{ 'Enabled' if enable_turbo_boost else 'Disabled' }}
+          - NUMA Optimization: {{ 'Yes' if optimize_numa else 'No' }}
+
+          Next Steps:
+          1. Reboot the system
+          2. Run validation: ansible-playbook playbooks/validate_gpu.yml
+          3. Check logs: /var/log/gpu_baseline/ and /var/log/cpu-optimization-summary.txt
+        mode: '0644'
+      tags: always

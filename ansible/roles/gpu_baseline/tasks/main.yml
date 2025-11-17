@@ -18,6 +18,10 @@
   include_tasks: prerequisites.yml
   tags: prerequisites
 
+- name: Detect GPU and select CUDA version
+  include_tasks: detect_gpu.yml
+  tags: detect_gpu
+
 - name: Install NVIDIA driver
   include_tasks: nvidia_driver.yml
   tags: nvidia_driver

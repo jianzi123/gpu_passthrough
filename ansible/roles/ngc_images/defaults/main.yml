@@ -1,0 +1,32 @@
+---
+# Default variables for ngc_images role
+# Manages NGC (NVIDIA GPU Cloud) container images
+
+# NGC Image Configuration
+ngc_images_to_pull:
+  - name: pytorch
+    version: "24.01"
+  - name: nemo
+    version: "24.01"
+  - name: triton
+    version: "24.01"
+
+# Pull all NGC images by default
+pull_ngc_images: true
+
+# Auto-select images based on CUDA version
+auto_select_images_by_cuda: true
+
+# NGC Registry Configuration
+ngc_registry: "nvcr.io"
+ngc_require_auth: false  # Set to true if using private NGC registry
+
+# Docker configuration
+docker_pull_timeout: 3600  # 1 hour timeout for large images
+
+# Image testing
+test_images_after_pull: true
+run_gpu_validation: true
+
+# Logging
+ngc_log_directory: "/var/log/ngc_images"

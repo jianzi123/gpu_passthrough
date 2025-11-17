@@ -16,6 +16,10 @@ OUTPUT_DIR="${1:-/tmp/megatron_benchmarks}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 MEGATRON_DIR="${MEGATRON_DIR:-/opt/Megatron-LM}"
 
+# NGC Container Configuration
+USE_NGC_CONTAINER="${USE_NGC_CONTAINER:-true}"  # Use NGC NeMo container by default
+NGC_IMAGE="${NGC_IMAGE:-nvcr.io/nvidia/nemo:24.01}"
+
 # Model configuration options
 MODEL_SIZE="${MODEL_SIZE:-GPT-1.2B}"  # GPT-1.2B, GPT-8.3B, or custom
 BATCH_SIZE="${BATCH_SIZE:-8}"
@@ -31,18 +35,43 @@ echo "Output directory: $OUTPUT_DIR"
 echo "Timestamp: $TIMESTAMP"
 echo ""
 
-# Check if Megatron-LM is available
-if [ ! -d "$MEGATRON_DIR" ]; then
-    echo -e "${YELLOW}WARNING: Megatron-LM not found at $MEGATRON_DIR${NC}"
-    echo ""
-    echo "To install Megatron-LM:"
-    echo "  git clone https://github.com/NVIDIA/Megatron-LM.git"
-    echo "  cd Megatron-LM"
-    echo "  pip install -r requirements.txt"
-    echo ""
-    echo "Then set MEGATRON_DIR=/path/to/Megatron-LM"
-    echo ""
-    echo "This script will create a sample training configuration."
+# Check NGC container or local installation
+if [ "$USE_NGC_CONTAINER" = "true" ]; then
+    echo -e "${BLUE}Using NGC NeMo Container: $NGC_IMAGE${NC}"
+
+    # Check if NGC image is available
+    if ! docker images --format "{{.Repository}}:{{.Tag}}" | grep -q "$(echo $NGC_IMAGE | cut -d':' -f1)"; then
+        echo -e "${YELLOW}NGC image not found locally. Pulling...${NC}"
+        docker pull "$NGC_IMAGE" || {
+            echo -e "${RED}Failed to pull NGC image${NC}"
+            echo "Falling back to local installation"
+            USE_NGC_CONTAINER=false
+        }
+    fi
+
+    # Detect NGC image utilities
+    if [ -f "/usr/local/bin/ngc_images.py" ]; then
+        echo "NGC Image Info:"
+        python3 /usr/local/bin/ngc_images.py nemo 2>/dev/null | head -10 || true
+    fi
+else
+    # Check if Megatron-LM is available
+    if [ ! -d "$MEGATRON_DIR" ]; then
+        echo -e "${YELLOW}WARNING: Megatron-LM not found at $MEGATRON_DIR${NC}"
+        echo ""
+        echo "Option 1: Use NGC NeMo Container (recommended):"
+        echo "  export USE_NGC_CONTAINER=true"
+        echo "  # This script will automatically pull and use NGC NeMo image"
+        echo ""
+        echo "Option 2: Install Megatron-LM locally:"
+        echo "  git clone https://github.com/NVIDIA/Megatron-LM.git"
+        echo "  cd Megatron-LM"
+        echo "  pip install -r requirements.txt"
+        echo ""
+        echo "Then set MEGATRON_DIR=/path/to/Megatron-LM"
+        echo ""
+        echo "This script will create a sample training configuration."
+    fi
 fi
 
 # Detect system configuration

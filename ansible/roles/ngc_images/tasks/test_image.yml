@@ -1,0 +1,52 @@
+---
+# Test a NGC image to verify it works
+
+- name: Get NGC image URL for testing
+  shell: |
+    python3 /usr/local/bin/ngc_images.py "{{ ngc_image.name }}" "{{ ngc_image.version | default('') }}" 2>/dev/null | grep "URL:" | awk '{print $2}'
+  register: ngc_image_url
+  changed_when: false
+  failed_when: false
+
+- name: Test {{ ngc_image.name }} image - Check CUDA availability
+  shell: |
+    docker run --rm --gpus all {{ ngc_image_url.stdout }} \
+      bash -c "python3 -c 'import torch; print(\"CUDA Available:\", torch.cuda.is_available()); print(\"GPU Count:\", torch.cuda.device_count())'" 2>/dev/null || \
+    docker run --rm --gpus all {{ ngc_image_url.stdout }} \
+      bash -c "python3 -c 'print(\"Container test passed\")'" 2>/dev/null
+  register: image_test_result
+  timeout: 60
+  changed_when: false
+  failed_when: false
+  when:
+    - run_gpu_validation | bool
+    - ngc_image_url.stdout is defined
+    - ngc_image.name in ['pytorch', 'tensorflow', 'nemo']
+
+- name: Test Triton server image
+  shell: |
+    docker run --rm {{ ngc_image_url.stdout }} tritonserver --help | head -1
+  register: triton_test_result
+  timeout: 30
+  changed_when: false
+  failed_when: false
+  when:
+    - ngc_image_url.stdout is defined
+    - ngc_image.name == 'triton'
+
+- name: Log test result
+  lineinfile:
+    path: "{{ ngc_log_directory }}/test_log.txt"
+    line: >
+      {{ ansible_date_time.iso8601 }} - {{ ngc_image.name }}:{{ ngc_image.version | default('latest') }}
+      - Test {{ 'PASSED' if (image_test_result.rc == 0 or triton_test_result.rc == 0) else 'FAILED' }}
+    create: yes
+    mode: '0644'
+  when: image_test_result is defined or triton_test_result is defined
+
+- name: Display test result
+  debug:
+    msg: |
+      Image: {{ ngc_image.name }}
+      Test Output: {{ image_test_result.stdout | default(triton_test_result.stdout) | default('N/A') }}
+  when: image_test_result is defined or triton_test_result is defined

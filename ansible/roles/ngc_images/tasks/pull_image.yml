@@ -1,0 +1,48 @@
+---
+# Pull a single NGC image
+
+- name: Get NGC image URL
+  shell: |
+    python3 /usr/local/bin/ngc_images.py --pull "{{ ngc_image.name }}" "{{ ngc_image.version | default('') }}" 2>/dev/null
+  register: ngc_pull_command
+  changed_when: false
+  failed_when: ngc_pull_command.rc != 0
+
+- name: Display pull command
+  debug:
+    msg: "{{ ngc_pull_command.stdout }}"
+
+- name: Pull NGC image {{ ngc_image.name }}:{{ ngc_image.version | default('latest') }}
+  shell: "{{ ngc_pull_command.stdout }}"
+  register: docker_pull_result
+  async: "{{ docker_pull_timeout }}"
+  poll: 30
+  failed_when: false
+
+- name: Check pull result
+  debug:
+    msg: >
+      Image {{ ngc_image.name }}:{{ ngc_image.version | default('latest') }}
+      pull {{ 'succeeded' if docker_pull_result.rc == 0 else 'failed' }}
+
+- name: Log pull result
+  lineinfile:
+    path: "{{ ngc_log_directory }}/pull_log.txt"
+    line: >
+      {{ ansible_date_time.iso8601 }} - {{ ngc_image.name }}:{{ ngc_image.version | default('latest') }}
+      - {{ 'SUCCESS' if docker_pull_result.rc == 0 else 'FAILED' }}
+    create: yes
+    mode: '0644'
+
+- name: Get image size and details
+  shell: |
+    docker images --format "table {{{{.Repository}}}}\t{{{{.Tag}}}}\t{{{{.Size}}}}" | grep -E "{{ ngc_image.name }}" | head -1
+  register: image_details
+  changed_when: false
+  failed_when: false
+  when: docker_pull_result.rc == 0
+
+- name: Display image details
+  debug:
+    var: image_details.stdout
+  when: docker_pull_result.rc == 0

@@ -2,15 +2,18 @@
 # Default variables for gpu_baseline role
 # Based on NVIDIA official ansible roles and community best practices
 
+# GPU Auto-Detection
+auto_detect_cuda_version: true  # Auto-detect GPU and select compatible CUDA version
+
 # NVIDIA Driver Configuration
-nvidia_driver_version: "535"  # Recommended stable version
+nvidia_driver_version: "535"  # Default version, auto-selected if auto_detect_cuda_version is true
 nvidia_driver_ubuntu_install_from_cuda_repo: true
 nvidia_driver_package_state: "present"
 nvidia_driver_skip_reboot: false
 
 # CUDA Configuration
 install_cuda: true
-cuda_version: "12-2"  # CUDA 12.2
+cuda_version: "12-2"  # Default CUDA version, auto-selected if auto_detect_cuda_version is true
 cuda_package_state: "present"
 
 # Container Runtime Configuration

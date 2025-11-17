@@ -1,0 +1,50 @@
+---
+# Create NGC image inventory report
+
+- name: Get list of NGC images on system
+  shell: |
+    docker images --format "{{{{.Repository}}}}:{{{{.Tag}}}}\t{{{{.Size}}}}" | grep "nvcr.io/nvidia" | sort
+  register: ngc_images_list
+  changed_when: false
+  failed_when: false
+
+- name: Create NGC image inventory report
+  copy:
+    content: |
+      NGC Container Image Inventory Report
+      ====================================
+      Generated: {{ ansible_date_time.iso8601 }}
+      Hostname: {{ ansible_hostname }}
+
+      System Information:
+      - CUDA Version: {{ installed_cuda_version.stdout | default('Unknown') }}
+      - Docker Version: {{ ansible_facts.packages['docker-ce'][0].version | default('Unknown') }}
+
+      NGC Images on System:
+      {% if ngc_images_list.stdout_lines %}
+      {% for image in ngc_images_list.stdout_lines %}
+      - {{ image }}
+      {% endfor %}
+      {% else %}
+      No NGC images found
+      {% endif %}
+
+      Pull Log Summary:
+      {% if lookup('file', ngc_log_directory + '/pull_log.txt', errors='ignore') %}
+      {{ lookup('file', ngc_log_directory + '/pull_log.txt', errors='ignore') }}
+      {% else %}
+      No pull logs available
+      {% endif %}
+
+      Test Log Summary:
+      {% if lookup('file', ngc_log_directory + '/test_log.txt', errors='ignore') %}
+      {{ lookup('file', ngc_log_directory + '/test_log.txt', errors='ignore') }}
+      {% else %}
+      No test logs available
+      {% endif %}
+    dest: "{{ ngc_log_directory }}/ngc_inventory_report.txt"
+    mode: '0644'
+
+- name: Display report location
+  debug:
+    msg: "NGC inventory report created at: {{ ngc_log_directory }}/ngc_inventory_report.txt"

@@ -1,0 +1,89 @@
+---
+# Detect GPU model and auto-select compatible CUDA version
+# Uses cuda_compatibility.py to determine best CUDA version
+
+- name: Check if lspci is available
+  command: which lspci
+  register: lspci_check
+  changed_when: false
+  failed_when: false
+
+- name: Install pciutils if needed
+  apt:
+    name: pciutils
+    state: present
+    update_cache: yes
+  when: lspci_check.rc != 0
+
+- name: Detect NVIDIA GPU models
+  shell: |
+    lspci | grep -i nvidia | grep -i "3D controller\|VGA compatible controller" | head -1 | sed 's/.*: //' | sed 's/ (rev.*//'
+  register: gpu_detection
+  changed_when: false
+  failed_when: false
+
+- name: Set detected GPU model
+  set_fact:
+    detected_gpu_model: "{{ gpu_detection.stdout | default('Unknown') }}"
+  when: gpu_detection.rc == 0
+
+- name: Display detected GPU
+  debug:
+    msg: "Detected GPU: {{ detected_gpu_model }}"
+  when: detected_gpu_model is defined
+
+- name: Copy CUDA compatibility script
+  copy:
+    src: "{{ playbook_dir }}/../scripts/utils/cuda_compatibility.py"
+    dest: /tmp/cuda_compatibility.py
+    mode: '0755'
+  when: detected_gpu_model is defined and detected_gpu_model != "Unknown"
+
+- name: Get recommended CUDA version for detected GPU
+  shell: |
+    python3 /tmp/cuda_compatibility.py "{{ detected_gpu_model }}" 2>/dev/null | grep "Recommended CUDA:" | awk '{print $3}'
+  register: recommended_cuda
+  changed_when: false
+  failed_when: false
+  when: detected_gpu_model is defined and detected_gpu_model != "Unknown"
+
+- name: Get recommended driver version for detected GPU
+  shell: |
+    python3 /tmp/cuda_compatibility.py "{{ detected_gpu_model }}" 2>/dev/null | grep "Recommended Driver:" | awk '{print $3}'
+  register: recommended_driver
+  changed_when: false
+  failed_when: false
+  when: detected_gpu_model is defined and detected_gpu_model != "Unknown"
+
+- name: Set CUDA version based on GPU detection
+  set_fact:
+    cuda_version: "{{ recommended_cuda.stdout | replace('.', '-') }}"
+    nvidia_driver_version: "{{ recommended_driver.stdout.split('.')[0] }}"
+  when:
+    - recommended_cuda.rc == 0
+    - recommended_cuda.stdout != ""
+    - auto_detect_cuda_version | default(true) | bool
+
+- name: Display selected CUDA configuration
+  debug:
+    msg:
+      - "GPU Model: {{ detected_gpu_model }}"
+      - "Selected CUDA Version: {{ cuda_version }}"
+      - "Selected Driver Version: {{ nvidia_driver_version }}"
+  when: detected_gpu_model is defined
+
+- name: Create GPU detection report
+  copy:
+    content: |
+      GPU Detection Report
+      ====================
+      Timestamp: {{ ansible_date_time.iso8601 }}
+      Hostname: {{ ansible_hostname }}
+
+      Detected GPU: {{ detected_gpu_model | default('Unknown') }}
+      Selected CUDA Version: {{ cuda_version }}
+      Selected Driver Version: {{ nvidia_driver_version }}
+
+      Auto-detection: {{ auto_detect_cuda_version | default(true) }}
+    dest: "{{ log_directory }}/gpu_detection.txt"
+    mode: '0644'

@@ -1,0 +1,82 @@
+---
+# Main tasks for ngc_images role
+# Pulls and manages NGC container images
+
+- name: Create NGC log directory
+  file:
+    path: "{{ ngc_log_directory }}"
+    state: directory
+    mode: '0755'
+  tags: always
+
+- name: Ensure Docker is installed and running
+  service:
+    name: docker
+    state: started
+    enabled: yes
+
+- name: Copy NGC images utility script
+  copy:
+    src: "{{ playbook_dir }}/../scripts/utils/ngc_images.py"
+    dest: /usr/local/bin/ngc_images.py
+    mode: '0755'
+  tags: ngc_utils
+
+- name: Copy CUDA compatibility script
+  copy:
+    src: "{{ playbook_dir }}/../scripts/utils/cuda_compatibility.py"
+    dest: /usr/local/bin/cuda_compatibility.py
+    mode: '0755'
+  tags: ngc_utils
+
+- name: Get installed CUDA version
+  shell: |
+    if command -v nvcc &> /dev/null; then
+      nvcc --version | grep "release" | awk '{print $5}' | cut -d',' -f1
+    else
+      echo "unknown"
+    fi
+  register: installed_cuda_version
+  changed_when: false
+  failed_when: false
+
+- name: Display installed CUDA version
+  debug:
+    msg: "Installed CUDA version: {{ installed_cuda_version.stdout }}"
+
+- name: Get recommended NGC images for CUDA version
+  shell: |
+    python3 /usr/local/bin/ngc_images.py --cuda "{{ installed_cuda_version.stdout }}" 2>/dev/null | grep -E "PyTorch|NeMo|Triton" | head -3
+  register: recommended_images
+  changed_when: false
+  failed_when: false
+  when:
+    - auto_select_images_by_cuda | bool
+    - installed_cuda_version.stdout != "unknown"
+
+- name: Display recommended images
+  debug:
+    var: recommended_images.stdout_lines
+  when: recommended_images.stdout is defined
+
+- name: Pull NGC container images
+  include_tasks: pull_image.yml
+  loop: "{{ ngc_images_to_pull }}"
+  loop_control:
+    loop_var: ngc_image
+  when: pull_ngc_images | bool
+  tags: pull_images
+
+- name: Test NGC images
+  include_tasks: test_image.yml
+  loop: "{{ ngc_images_to_pull }}"
+  loop_control:
+    loop_var: ngc_image
+  when:
+    - test_images_after_pull | bool
+    - pull_ngc_images | bool
+  tags: test_images
+
+- name: Create NGC image inventory report
+  include_tasks: create_report.yml
+  tags: report

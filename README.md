@@ -2,16 +2,18 @@
 
 这个项目提供基于 Ansible 的 GPU 机器基线安装和验证自动化解决方案，基于 NVIDIA 官方工具和 2024-2025 年最新的开源社区最佳实践。
 
-> **🆕 2025 年更新**: 新增 CPU 性能优化、NUMA 配置、完整系统验证、通讯带宽测试和模型训练基准测试
+> **🆕 2025 年更新**: 新增 CPU 性能优化、NUMA 配置、完整系统验证、通讯带宽测试、模型训练基准测试、GPU-CUDA 兼容性自动匹配、NGC 容器镜像管理
 
 ## 项目目标
 
 1. **自动化安装**: 通过 Ansible 自动化安装 GPU 机器的基线环境（驱动、CUDA、容器运行时）
-2. **CPU 性能优化**: 优化 CPU 配置以最大化 GPU 工作负载性能（NUMA、频率调节、Turbo Boost 等）
-3. **全面验证**: 提供多级别的验证脚本，检查 CPU、GPU、NUMA、IOMMU、PCIe 等所有配置
-4. **🆕 通讯带宽测试**: PCIe、NVLink、RDMA 带宽测试，与性能基线对比
-5. **🆕 模型训练基准**: NCCL 集合通信测试、Megatron-LM 训练吞吐量测试
-6. **开源整合**: 基于 NVIDIA DeepOps、GPU Operator 等 2024-2025 年最新工具和最佳实践
+2. **🆕 智能 CUDA 选择**: 自动检测 GPU 型号并选择对应的 CUDA 和驱动版本
+3. **CPU 性能优化**: 优化 CPU 配置以最大化 GPU 工作负载性能（NUMA、频率调节、Turbo Boost 等）
+4. **全面验证**: 提供多级别的验证脚本，检查 CPU、GPU、NUMA、IOMMU、PCIe 等所有配置
+5. **🆕 通讯带宽测试**: PCIe、NVLink、RDMA 带宽测试，与性能基线对比
+6. **🆕 模型训练基准**: NCCL 集合通信测试、Megatron-LM 训练吞吐量测试
+7. **🆕 NGC 容器管理**: 自动化拉取和管理 NVIDIA NGC 镜像（PyTorch、NeMo、Triton 等）
+8. **开源整合**: 基于 NVIDIA DeepOps、GPU Operator 等 2024-2025 年最新工具和最佳实践
 
 ## 项目结构
 
@@ -19,9 +21,10 @@
 gpu_passthrough/
 ├── ansible/                    # Ansible 自动化配置
 │   ├── roles/
-│   │   ├── gpu_baseline/      # GPU 基线安装 role
+│   │   ├── gpu_baseline/      # GPU 基线安装 role (含 GPU 自动检测)
 │   │   ├── cpu_optimization/  # 🆕 CPU 性能优化 role
 │   │   ├── benchmark_tools/   # 🆕 基准测试工具 role
+│   │   ├── ngc_images/        # 🆕 NGC 容器镜像管理 role
 │   │   └── gpu_validation/    # GPU 验证 role
 │   ├── playbooks/
 │   │   ├── setup_gpu_baseline.yml           # GPU 基线安装
@@ -39,12 +42,16 @@ gpu_passthrough/
 │   │   ├── nccl_benchmark.sh  # NCCL 测试
 │   │   └── megatron_benchmark.sh # Megatron 训练基准
 │   ├── utils/                 # 工具脚本
-│   │   └── performance_baselines.py # 性能基线数据库
+│   │   ├── performance_baselines.py # 性能基线数据库
+│   │   ├── cuda_compatibility.py    # 🆕 GPU-CUDA 兼容性数据库
+│   │   ├── ngc_images.py            # 🆕 NGC 镜像注册表
+│   │   └── ngc_manager.sh           # 🆕 NGC 镜像管理工具
 │   └── monitoring/            # 监控脚本
 ├── docs/                       # 文档
 │   ├── research.md            # 开源项目调研报告
 │   ├── latest_research_2025.md # 🆕 2024-2025 最新调研
 │   ├── bandwidth_and_benchmarks.md # 🆕 带宽测试和基准测试指南
+│   ├── cuda_compatibility_and_ngc.md # 🆕 CUDA 兼容性和 NGC 镜像指南
 │   └── implementation_plan.md # 实施方案
 └── README.md
 ```
@@ -59,6 +66,29 @@ gpu_passthrough/
 - ✅ CUDA Toolkit
 - ✅ NVIDIA Container Toolkit (Docker/containerd)
 - ✅ GPU 配置优化（持久化模式、功率限制等）
+- ✅ 🆕 **GPU 自动检测**: 自动识别 GPU 型号并选择对应的 CUDA 和驱动版本
+
+**🆕 GPU-CUDA 兼容性自动匹配**:
+
+支持的 GPU 型号和自动选择的 CUDA 版本：
+
+| GPU 架构 | GPU 型号 | 推荐 CUDA | 推荐驱动 |
+|---------|---------|-----------|----------|
+| Volta | V100 | 12.2 | 535.154.05 |
+| Ampere | A100, A800, RTX 3090 | 12.2 | 535.154.05 |
+| Hopper | H100, H800 | 12.3 | 545.23.08 |
+| Ada Lovelace | RTX 4090 | 12.2 | 535.154.05 |
+
+```bash
+# 启用自动检测（默认启用）
+auto_detect_cuda_version: true
+
+# Ansible 会自动：
+# 1. 检测 GPU 型号（lspci）
+# 2. 查询兼容性数据库
+# 3. 选择推荐的 CUDA 版本和驱动版本
+# 4. 记录检测报告到 /var/log/gpu_baseline/gpu_detection.txt
+```
 
 **基于的开源项目**:
 - [NVIDIA/ansible-role-nvidia-driver](https://github.com/NVIDIA/ansible-role-nvidia-driver)
@@ -183,6 +213,7 @@ mpirun -np 64 -N 8 --hostfile hosts \
 - ✅ **MFU 计算**: Model FLOP Utilization（模型利用率）
 - ✅ **扩展性测试**: 多 GPU/多节点性能
 - ✅ **性能基线对比**: 与已知基准对比
+- ✅ **🆕 NGC 容器支持**: 支持使用 NGC NeMo 镜像运行
 
 **性能基线 (GPT-1.2B 单 GPU)**:
 
@@ -194,18 +225,106 @@ mpirun -np 64 -N 8 --hostfile hosts \
 
 **使用方式**:
 ```bash
-# 运行 GPT-1.2B 基准测试
+# 使用 NGC NeMo 容器运行（推荐）
+export USE_NGC_CONTAINER=true
 MODEL_SIZE=GPT-1.2B ./scripts/benchmarks/megatron_benchmark.sh
 
-# 或使用快捷命令
-MODEL_SIZE=GPT-1.2B gpu-benchmark megatron
+# 或使用本地 Megatron-LM
+export USE_NGC_CONTAINER=false
+MODEL_SIZE=GPT-1.2B ./scripts/benchmarks/megatron_benchmark.sh
 
 # 自定义参数
 MODEL_SIZE=GPT-8.3B BATCH_SIZE=16 NUM_STEPS=200 \
     gpu-benchmark megatron
 ```
 
-### 7. GPU 验证测试 (多级别)
+### 7. 🆕 NGC 容器镜像管理 (ngc_images role)
+
+**自动化管理 NVIDIA NGC (GPU Cloud) 容器镜像**：
+
+NVIDIA NGC 提供预优化的深度学习和推理容器，包含 CUDA、cuDNN、NCCL 等完整工具链。
+
+**支持的 NGC 镜像**:
+
+| 镜像 | 版本 | 用途 | 主要组件 |
+|------|------|------|----------|
+| **pytorch** | 24.01 | 训练/推理 | PyTorch 2.3, CUDA 12.3, TensorRT 8.6 |
+| **nemo** | 24.01 | LLM 训练 | Megatron-LM 0.5, NeMo 1.22, Transformer Engine |
+| **triton** | 24.01 | 推理服务 | Triton Server 2.42, TensorRT, 多后端支持 |
+| **tensorflow** | 24.01 | 训练/推理 | TensorFlow 2.15, CUDA 12.3 |
+| **tensorrt** | 24.01 | 推理优化 | TensorRT 8.6, ONNX Parser |
+| **cuda** | 12.3.2 | 开发 | CUDA Toolkit, NVCC, cuBLAS |
+| **rapids** | 24.02 | 数据科学 | cuDF, cuML, cuGraph, Dask |
+| **deepstream** | 6.4 | 视频分析 | DeepStream, Triton 集成 |
+
+**功能特性**:
+
+- ✅ **自动拉取**: 基于 CUDA 版本自动选择兼容镜像
+- ✅ **GPU 测试**: 拉取后自动验证 GPU 功能
+- ✅ **镜像管理**: 便捷的命令行工具管理镜像
+- ✅ **清单报告**: 自动生成镜像清单和测试报告
+
+**使用方式**:
+
+```bash
+# 查看可用 NGC 镜像
+./scripts/utils/ngc_manager.sh list
+
+# 拉取 PyTorch 镜像
+./scripts/utils/ngc_manager.sh pull pytorch
+
+# 拉取特定版本
+./scripts/utils/ngc_manager.sh pull pytorch 24.01
+
+# 运行镜像（交互式）
+./scripts/utils/ngc_manager.sh run pytorch
+
+# 测试镜像 GPU 功能
+./scripts/utils/ngc_manager.sh test pytorch
+
+# 查看 CUDA 12.3 兼容镜像
+./scripts/utils/ngc_manager.sh cuda 12.3
+```
+
+**Ansible 自动化部署**:
+
+```yaml
+# ansible/roles/ngc_images/defaults/main.yml
+ngc_images_to_pull:
+  - name: pytorch
+    version: "24.01"
+  - name: nemo
+    version: "24.01"
+  - name: triton
+    version: "24.01"
+
+# 自动根据 CUDA 版本选择镜像
+auto_select_images_by_cuda: true
+```
+
+运行 playbook:
+```bash
+ansible-playbook -i inventory/hosts playbooks/setup_ngc_images.yml
+```
+
+**NGC 镜像使用示例**:
+
+```bash
+# 使用 PyTorch 镜像训练
+docker run --gpus all -it --rm \
+  --ipc=host --network=host \
+  -v $HOME/workspace:/workspace \
+  nvcr.io/nvidia/pytorch:24.01-py3
+
+# 使用 Triton 部署推理服务
+docker run --gpus all -it --rm \
+  -p 8000:8000 -p 8001:8001 -p 8002:8002 \
+  -v /path/to/models:/models \
+  nvcr.io/nvidia/tritonserver:24.01-py3 \
+  tritonserver --model-repository=/models
+```
+
+### 8. GPU 验证测试 (多级别)
 
 #### Level 1: 快速验证 (1-5 分钟)
 - nvidia-smi 可用性检查

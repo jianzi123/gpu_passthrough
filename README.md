@@ -2,7 +2,7 @@
 
 这个项目提供基于 Ansible 的 GPU 机器基线安装和验证自动化解决方案，基于 NVIDIA 官方工具和 2024-2025 年最新的开源社区最佳实践。
 
-> **🆕 2025 年更新**: 新增 CPU 性能优化、NUMA 配置、完整系统验证、通讯带宽测试、模型训练基准测试、GPU-CUDA 兼容性自动匹配、NGC 容器镜像管理
+> **🆕 2025 年更新**: 新增 CPU 性能优化、NUMA 配置、完整系统验证、通讯带宽测试、模型训练基准测试、GPU-CUDA 兼容性自动匹配、NGC 容器镜像管理、**慢节点检测**
 
 ## 项目目标
 
@@ -13,7 +13,8 @@
 5. **🆕 通讯带宽测试**: PCIe、NVLink、RDMA 带宽测试，与性能基线对比
 6. **🆕 模型训练基准**: NCCL 集合通信测试、Megatron-LM 训练吞吐量测试
 7. **🆕 NGC 容器管理**: 自动化拉取和管理 NVIDIA NGC 镜像（PyTorch、NeMo、Triton 等）
-8. **开源整合**: 基于 NVIDIA DeepOps、GPU Operator 等 2024-2025 年最新工具和最佳实践
+8. **🆕 慢节点检测**: 自动检测集群中性能异常的节点和 GPU（NVLink、PCIe、NCCL 通讯）
+9. **开源整合**: 基于 NVIDIA DeepOps、GPU Operator 等 2024-2025 年最新工具和最佳实践
 
 ## 项目结构
 
@@ -25,10 +26,12 @@ gpu_passthrough/
 │   │   ├── cpu_optimization/  # 🆕 CPU 性能优化 role
 │   │   ├── benchmark_tools/   # 🆕 基准测试工具 role
 │   │   ├── ngc_images/        # 🆕 NGC 容器镜像管理 role
+│   │   ├── slow_node_detection/ # 🆕 慢节点检测 role
 │   │   └── gpu_validation/    # GPU 验证 role
 │   ├── playbooks/
 │   │   ├── setup_gpu_baseline.yml           # GPU 基线安装
 │   │   ├── full_deployment_optimized.yml    # 🆕 完整优化部署
+│   │   ├── detect_slow_nodes.yml            # 🆕 慢节点检测
 │   │   └── validate_gpu.yml                 # GPU 验证
 │   ├── inventory/             # 主机清单
 │   └── ansible.cfg
@@ -40,6 +43,9 @@ gpu_passthrough/
 │   │   ├── quick_check.sh     # 快速验证
 │   │   ├── system_check.sh    # 🆕 全面系统验证
 │   │   ├── bandwidth_test.sh  # 🆕 带宽测试
+│   │   ├── intra_node_bandwidth_check.sh   # 🆕 节点内部带宽检查
+│   │   ├── inter_node_nccl_check.sh        # 🆕 跨节点 NCCL 通讯检查
+│   │   ├── detect_slow_nodes.sh            # 🆕 综合慢节点检测工具
 │   │   └── gpu_health.py      # GPU 健康检查
 │   ├── benchmarks/            # 🆕 基准测试
 │   │   ├── nccl_benchmark.sh  # NCCL 测试
@@ -48,7 +54,8 @@ gpu_passthrough/
 │   │   ├── performance_baselines.py # 性能基线数据库
 │   │   ├── cuda_compatibility.py    # 🆕 GPU-CUDA 兼容性数据库
 │   │   ├── ngc_images.py            # 🆕 NGC 镜像注册表
-│   │   └── ngc_manager.sh           # 🆕 NGC 镜像管理工具
+│   │   ├── ngc_manager.sh           # 🆕 NGC 镜像管理工具
+│   │   └── manage_precompiled_drivers.sh # 🆕 预编译驱动管理工具
 │   └── monitoring/            # 监控脚本
 ├── docs/                       # 文档
 │   ├── research.md            # 开源项目调研报告
@@ -56,6 +63,10 @@ gpu_passthrough/
 │   ├── bandwidth_and_benchmarks.md # 🆕 带宽测试和基准测试指南
 │   ├── cuda_compatibility_and_ngc.md # 🆕 CUDA 兼容性和 NGC 镜像指南
 │   ├── gpu_driver_installation_methods.md # 🆕 GPU 驱动安装方法指南
+│   ├── precompiled_driver_guide.md  # 🆕 预编译驱动完整指南
+│   ├── slow_node_detection.md       # 🆕 慢节点检测完整指南
+│   ├── best_practices.md      # 🆕 最佳实践指南
+│   ├── QUICKSTART.md          # 🆕 快速开始指南
 │   └── implementation_plan.md # 实施方案
 └── README.md
 ```
@@ -387,7 +398,195 @@ docker run --gpus all -it --rm \
   tritonserver --model-repository=/models
 ```
 
-### 8. GPU 验证测试 (多级别)
+### 8. 🆕 慢节点检测 (Slow Node Detection)
+
+**自动检测 GPU 集群中性能异常的节点**，基于业界最佳实践（Microsoft Azure DGX Cloud、Together.AI）：
+
+#### 检测方法
+
+**1. 节点内部带宽检测** (`intra_node_bandwidth_check.sh`)
+- ✅ **NVLink 拓扑和状态**: 检查 NVLink 连接是否 active，识别降速链路
+- ✅ **GPU-GPU 带宽**: 使用 p2pBandwidthLatencyTest、nvbandwidth 测量 GPU 间带宽
+- ✅ **PCIe 带宽**: Host-to-Device 和 Device-to-Host 传输性能
+- ✅ **自动基线对比**: 与 A100/H100/V100 性能基线对比，识别慢 GPU
+
+**2. 跨节点 NCCL 通讯检测** (`inter_node_nccl_check.sh`)
+- ✅ **多次迭代统计**: 运行多次 NCCL all-reduce 测试，计算均值/标准差/最小值/最大值
+- ✅ **成对测试 (Pairwise)**: 测试每对节点之间的通讯性能，识别问题节点对
+- ✅ **二分搜索 (Binary Search)**: 快速定位慢节点（适用于 4+ 节点）
+- ✅ **性能基线对比**: 与 NCCL 性能基线对比，检测低于阈值的节点
+
+**3. 综合检测工具** (`detect_slow_nodes.sh`)
+- ✅ **统一界面**: 整合节点内部和跨节点检测
+- ✅ **并行执行**: 支持并行运行节点内部检查（更快）
+- ✅ **自动化报告**: 生成综合报告，识别所有问题节点和 GPU
+- ✅ **Ansible 集成**: 通过 playbook 自动化在整个集群执行
+
+#### 检测原理
+
+基于 **Microsoft Azure** 在 DGX Cloud 中使用的方法论：
+
+```
+1. 运行多次 NCCL all-reduce 测试（默认 10 次）收集统计数据
+2. 当总带宽偏离基线时，使用二分搜索隔离性能不佳的节点
+3. 执行成对 NCCL 测试识别坏节点
+4. 分析哪些节点在慢节点对中出现频率最高
+```
+
+#### 性能基线
+
+**节点内部（8 GPUs with NVLink）**:
+
+| GPU 型号 | NVLink 单 GPU 带宽 | NCCL AllReduce Bus BW | 阈值 (90%) |
+|---------|------------------|---------------------|-----------|
+| A100 SXM4 | 600 GB/s | ~250 GB/s | 225 GB/s |
+| H100 SXM5 | 900 GB/s | ~350 GB/s | 315 GB/s |
+| V100 SXM2 | 300 GB/s | ~180 GB/s | 162 GB/s |
+
+**跨节点（InfiniBand）**:
+
+| GPU + 网络 | NCCL Bus BW | 阈值 (92%) |
+|-----------|------------|----------|
+| A100 + IB HDR 200Gb | ~180 GB/s | 165 GB/s |
+| A100/H100 + IB NDR 400Gb | ~360 GB/s | 331 GB/s |
+
+#### 使用方式
+
+**单节点内部检查**:
+```bash
+# 快速检查单个节点的 GPU 带宽
+./scripts/validation/intra_node_bandwidth_check.sh -o results
+
+# 自定义阈值（85%）
+./scripts/validation/intra_node_bandwidth_check.sh -o results -t 85
+```
+
+**跨节点 NCCL 检查**:
+```bash
+# 创建节点列表
+cat > nodes.txt <<EOF
+gpu-node1
+gpu-node2
+gpu-node3
+gpu-node4
+EOF
+
+# 基本检查（全节点 all-reduce）
+./scripts/validation/inter_node_nccl_check.sh -n nodes.txt -o results
+
+# 启用成对测试（检测所有节点对）
+./scripts/validation/inter_node_nccl_check.sh -n nodes.txt -o results --pairwise
+
+# 启用二分搜索（快速定位慢节点）
+./scripts/validation/inter_node_nccl_check.sh -n nodes.txt -o results --binary-search
+
+# 完整检测（成对 + 二分搜索 + 20 次迭代）
+./scripts/validation/inter_node_nccl_check.sh -n nodes.txt -o results \
+  --pairwise --binary-search -i 20
+```
+
+**综合检测（推荐）**:
+```bash
+# 完整集群检测（节点内部 + 跨节点）
+./scripts/validation/detect_slow_nodes.sh -n nodes.txt -o results
+
+# 并行执行节点内部检查 + 完整跨节点测试
+./scripts/validation/detect_slow_nodes.sh -n nodes.txt -o results \
+  --parallel --pairwise --binary-search
+
+# 仅节点内部检查（快速）
+./scripts/validation/detect_slow_nodes.sh -n nodes.txt --skip-inter --parallel
+
+# 仅跨节点检查
+./scripts/validation/detect_slow_nodes.sh -n nodes.txt --skip-intra --pairwise
+```
+
+**Ansible 自动化**:
+```bash
+# 使用 Ansible 在整个集群运行检测
+cd ansible
+
+# 完整检测
+ansible-playbook -i inventory playbooks/detect_slow_nodes.yml
+
+# 自定义配置
+ansible-playbook -i inventory playbooks/detect_slow_nodes.yml \
+  -e slow_node_detection_threshold=92 \
+  -e slow_node_detection_pairwise=true \
+  -e slow_node_detection_binary_search=true \
+  -e slow_node_detection_parallel=true
+```
+
+#### 检测输出
+
+检测完成后会生成详细报告：
+
+```
+results/
+├── intra_node_results/           # 节点内部检查结果
+│   ├── node1_<timestamp>/
+│   │   ├── gpu_info_*.txt
+│   │   ├── nvlink_topology_*.txt
+│   │   ├── p2p_bandwidth_summary_*.csv
+│   │   ├── pcie_bandwidth_summary_*.csv
+│   │   ├── slow_connections_*.txt    # ⚠ 慢 GPU 连接（如有）
+│   │   └── bandwidth_check_report_*.md
+│   └── ...
+├── inter_node_results/           # 跨节点 NCCL 检查结果
+│   ├── all_nodes_*_stats.txt
+│   ├── pairwise_results_*.csv
+│   └── nccl_check_report_*.md
+└── slow_node_summary_*.md        # 综合报告
+```
+
+#### 常见问题诊断
+
+**问题类型 1: NVLink 带宽低**
+```
+症状: GPU 0 <-> GPU 1: 150 GB/s (预期: 300 GB/s)
+原因: NVLink cable 松动或故障
+解决: 重新插拔 cable，检查 nvidia-smi nvlink --status
+```
+
+**问题类型 2: PCIe 降速**
+```
+症状: GPU 运行在 Gen3 x8 (预期: Gen4 x16)
+原因: PCIe 槽位配置错误
+解决: 确认 GPU 安装在正确的 PCIe 槽位，更新 BIOS
+```
+
+**问题类型 3: 跨节点通讯慢**
+```
+症状: node1 <-> node3 的所有成对测试均 <100 GB/s
+原因: InfiniBand 连接问题或网卡故障
+解决: 检查 IB cable，验证 ibstat 输出，更新 IB 驱动
+```
+
+**详细文档**: [慢节点检测完整指南](docs/slow_node_detection.md)
+
+#### 最佳实践
+
+**定期检测频率**:
+- **新集群部署**: 立即运行完整检测作为验收
+- **日常运行**: 每周快速检测（仅节点内部）
+- **定期维护**: 每月完整检测（包括跨节点）
+- **问题排查**: 发现性能问题时立即运行
+
+**检测策略**:
+- **快速检测** (5-10 分钟): 仅节点内部，并行执行
+- **标准检测** (30-60 分钟): 节点内部 + 全节点 NCCL
+- **深度检测** (2-4 小时): 完整成对测试 + 二分搜索
+
+**自动化**:
+```bash
+# 使用 cron 定期运行
+# /etc/cron.weekly/gpu_cluster_check
+ansible-playbook -i production_inventory playbooks/detect_slow_nodes.yml \
+  -e slow_node_detection_skip_inter=true \
+  -e slow_node_detection_output_dir=/var/log/slow_node_detection/$(date +%Y%m%d)
+```
+
+### 9. GPU 验证测试 (多级别)
 
 #### Level 1: 快速验证 (1-5 分钟)
 - nvidia-smi 可用性检查

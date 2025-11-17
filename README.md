@@ -2,14 +2,16 @@
 
 这个项目提供基于 Ansible 的 GPU 机器基线安装和验证自动化解决方案，基于 NVIDIA 官方工具和 2024-2025 年最新的开源社区最佳实践。
 
-> **🆕 2025 年更新**: 新增 CPU 性能优化、NUMA 配置、完整系统验证等企业级功能
+> **🆕 2025 年更新**: 新增 CPU 性能优化、NUMA 配置、完整系统验证、通讯带宽测试和模型训练基准测试
 
 ## 项目目标
 
 1. **自动化安装**: 通过 Ansible 自动化安装 GPU 机器的基线环境（驱动、CUDA、容器运行时）
 2. **CPU 性能优化**: 优化 CPU 配置以最大化 GPU 工作负载性能（NUMA、频率调节、Turbo Boost 等）
 3. **全面验证**: 提供多级别的验证脚本，检查 CPU、GPU、NUMA、IOMMU、PCIe 等所有配置
-4. **开源整合**: 基于 NVIDIA DeepOps、GPU Operator 等 2024-2025 年最新工具和最佳实践
+4. **🆕 通讯带宽测试**: PCIe、NVLink、RDMA 带宽测试，与性能基线对比
+5. **🆕 模型训练基准**: NCCL 集合通信测试、Megatron-LM 训练吞吐量测试
+6. **开源整合**: 基于 NVIDIA DeepOps、GPU Operator 等 2024-2025 年最新工具和最佳实践
 
 ## 项目结构
 
@@ -19,6 +21,7 @@ gpu_passthrough/
 │   ├── roles/
 │   │   ├── gpu_baseline/      # GPU 基线安装 role
 │   │   ├── cpu_optimization/  # 🆕 CPU 性能优化 role
+│   │   ├── benchmark_tools/   # 🆕 基准测试工具 role
 │   │   └── gpu_validation/    # GPU 验证 role
 │   ├── playbooks/
 │   │   ├── setup_gpu_baseline.yml           # GPU 基线安装
@@ -30,12 +33,18 @@ gpu_passthrough/
 │   ├── validation/
 │   │   ├── quick_check.sh     # 快速验证
 │   │   ├── system_check.sh    # 🆕 全面系统验证
+│   │   ├── bandwidth_test.sh  # 🆕 带宽测试
 │   │   └── gpu_health.py      # GPU 健康检查
-│   ├── monitoring/            # 监控脚本
-│   └── utils/                 # 工具脚本
+│   ├── benchmarks/            # 🆕 基准测试
+│   │   ├── nccl_benchmark.sh  # NCCL 测试
+│   │   └── megatron_benchmark.sh # Megatron 训练基准
+│   ├── utils/                 # 工具脚本
+│   │   └── performance_baselines.py # 性能基线数据库
+│   └── monitoring/            # 监控脚本
 ├── docs/                       # 文档
 │   ├── research.md            # 开源项目调研报告
 │   ├── latest_research_2025.md # 🆕 2024-2025 最新调研
+│   ├── bandwidth_and_benchmarks.md # 🆕 带宽测试和基准测试指南
 │   └── implementation_plan.md # 实施方案
 └── README.md
 ```
@@ -101,7 +110,102 @@ gpu_passthrough/
 - 彩色终端输出（✓ 通过 / ⚠ 警告 / ✗ 失败）
 - 自动化可集成到 CI/CD
 
-### 4. GPU 验证测试 (多级别)
+### 4. 🆕 通讯带宽测试 (bandwidth_test.sh)
+
+**完整的通讯带宽测试和性能基线对比**：
+
+#### 机内通讯测试
+- ✅ **PCIe 带宽**: Host-Device 和 Device-Host 传输（使用 nvbandwidth, bandwidthTest）
+- ✅ **NVLink 带宽**: GPU-GPU P2P 传输（使用 p2pBandwidthLatencyTest）
+- ✅ **GPU 拓扑**: 自动检测 NVLink 连接和 PCIe 配置
+
+#### 机间通讯测试
+- ✅ **RDMA 带宽**: InfiniBand/RoCE 网络性能（使用 ib_write_bw）
+- ✅ **GPUDirect RDMA**: GPU 直接访问远程 GPU 内存
+- ✅ **网络拓扑**: 自动检测 IB 设备和链路速度
+
+#### 性能基线数据库
+
+| GPU 型号 | 内存带宽 | NVLink BW | PCIe BW | AllReduce (8GPU) |
+|---------|---------|-----------|---------|------------------|
+| A100-SXM4-80GB | 2039 GB/s | 600 GB/s | 64 GB/s | 250 GB/s |
+| H100-SXM5-80GB | 3350 GB/s | 900 GB/s | 128 GB/s | 450 GB/s |
+| V100-SXM2-32GB | 900 GB/s | 300 GB/s | 32 GB/s | 180 GB/s |
+
+**使用方式**:
+```bash
+# 运行完整带宽测试
+./scripts/validation/bandwidth_test.sh
+
+# 或使用快捷命令（安装后）
+gpu-benchmark bandwidth
+
+# 查看性能基线
+python3 scripts/utils/performance_baselines.py list
+python3 scripts/utils/performance_baselines.py info A100-SXM4-80GB
+```
+
+### 5. 🆕 NCCL 集合通信测试 (nccl_benchmark.sh)
+
+**测试分布式训练的集合通信性能**：
+
+- ✅ **AllReduce**: 最常用的梯度同步操作
+- ✅ **Broadcast**: 参数广播性能
+- ✅ **Reduce-Scatter**: 分布式 reduce 操作
+- ✅ **All-Gather**: 收集操作性能
+- ✅ **多节点支持**: MPI 集成，支持跨节点测试
+- ✅ **性能基线对比**: 自动对比预期性能
+
+**预期性能（Bus Bandwidth）**:
+- **A100 8-GPU 节点内**: ~250 GB/s
+- **H100 8-GPU 节点内**: ~450 GB/s
+- **A100 跨节点 (IB HDR)**: ~180 GB/s
+
+**使用方式**:
+```bash
+# 单节点 NCCL 测试
+./scripts/benchmarks/nccl_benchmark.sh
+
+# 或使用快捷命令
+gpu-benchmark nccl
+
+# 多节点测试（需要 MPI）
+mpirun -np 64 -N 8 --hostfile hosts \
+    /opt/nccl-tests/build/all_reduce_perf -b 8 -e 8G -f 2 -g 1
+```
+
+### 6. 🆕 Megatron-LM 训练基准 (megatron_benchmark.sh)
+
+**实际模型训练性能测试**：
+
+- ✅ **GPT 模型训练**: 支持 GPT-1.2B, GPT-8.3B, GPT-175B
+- ✅ **TFLOPS 测量**: 实际计算吞吐量
+- ✅ **MFU 计算**: Model FLOP Utilization（模型利用率）
+- ✅ **扩展性测试**: 多 GPU/多节点性能
+- ✅ **性能基线对比**: 与已知基准对比
+
+**性能基线 (GPT-1.2B 单 GPU)**:
+
+| GPU 型号 | TFLOPS | MFU | Samples/sec |
+|---------|--------|-----|-------------|
+| V100 | 39 | 30% | 12 |
+| A100 | 93.6 | 60% | 28 |
+| H100 | 178 | 47% | 45 |
+
+**使用方式**:
+```bash
+# 运行 GPT-1.2B 基准测试
+MODEL_SIZE=GPT-1.2B ./scripts/benchmarks/megatron_benchmark.sh
+
+# 或使用快捷命令
+MODEL_SIZE=GPT-1.2B gpu-benchmark megatron
+
+# 自定义参数
+MODEL_SIZE=GPT-8.3B BATCH_SIZE=16 NUM_STEPS=200 \
+    gpu-benchmark megatron
+```
+
+### 7. GPU 验证测试 (多级别)
 
 #### Level 1: 快速验证 (1-5 分钟)
 - nvidia-smi 可用性检查

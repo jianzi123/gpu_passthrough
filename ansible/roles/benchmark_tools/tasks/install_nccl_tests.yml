@@ -1,0 +1,36 @@
+---
+# Install NCCL tests
+
+- name: Check if NCCL tests already exist
+  stat:
+    path: "{{ nccl_tests_dir }}"
+  register: nccl_tests_stat
+
+- name: Clone NCCL tests
+  git:
+    repo: https://github.com/NVIDIA/nccl-tests.git
+    dest: "{{ nccl_tests_dir }}"
+    version: master
+  when: not nccl_tests_stat.stat.exists
+
+- name: Build NCCL tests with MPI support
+  shell: |
+    cd {{ nccl_tests_dir }}
+    make MPI=1 MPI_HOME=/usr/lib/x86_64-linux-gnu/openmpi
+  args:
+    creates: "{{ nccl_tests_dir }}/build/all_reduce_perf"
+  environment:
+    CUDA_HOME: /usr/local/cuda
+    NCCL_HOME: /usr/local/cuda
+
+- name: Create NCCL tests environment file
+  copy:
+    dest: /etc/profile.d/nccl_tests.sh
+    content: |
+      export NCCL_TESTS_DIR={{ nccl_tests_dir }}/build
+      export PATH={{ nccl_tests_dir }}/build:$PATH
+    mode: '0644'
+
+- name: Display NCCL tests location
+  debug:
+    msg: "NCCL tests installed at: {{ nccl_tests_dir }}/build"

@@ -1,0 +1,37 @@
+---
+# Benchmark Tools Installation Defaults
+
+# Install CUDA samples
+install_cuda_samples: true
+cuda_samples_dir: "/opt/cuda-samples"
+
+# Install NCCL tests
+install_nccl_tests: true
+nccl_tests_dir: "/opt/nccl-tests"
+
+# Install Megatron-LM
+install_megatron: false  # Optional, requires more setup
+megatron_dir: "/opt/Megatron-LM"
+
+# Install perftest (RDMA/InfiniBand testing)
+install_perftest: true
+
+# Install additional performance tools
+install_performance_tools: true
+performance_tools:
+  - numactl
+  - hwloc
+  - pciutils
+  - infiniband-diags  # For InfiniBand systems
+
+# Python packages for benchmarking
+python_benchmark_packages:
+  - numpy
+  - pandas
+  - matplotlib
+  - torch
+  - pynvml
+
+# MPI for multi-node testing
+install_mpi: true
+mpi_implementation: "openmpi"  # Options: openmpi, mpich

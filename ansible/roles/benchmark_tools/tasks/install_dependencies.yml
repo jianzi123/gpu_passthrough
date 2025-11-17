@@ -1,0 +1,38 @@
+---
+# Install system dependencies
+
+- name: Install performance tools (Debian/Ubuntu)
+  apt:
+    name: "{{ performance_tools }}"
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install build essentials
+  apt:
+    name:
+      - build-essential
+      - git
+      - cmake
+      - pkg-config
+      - libopenblas-dev
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: Install MPI (OpenMPI)
+  apt:
+    name:
+      - openmpi-bin
+      - openmpi-common
+      - libopenmpi-dev
+    state: present
+  when:
+    - ansible_os_family == "Debian"
+    - install_mpi | bool
+    - mpi_implementation == "openmpi"
+
+- name: Create tools directory
+  file:
+    path: /opt/gpu-tools
+    state: directory
+    mode: '0755'

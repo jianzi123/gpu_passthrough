@@ -5,11 +5,19 @@
 # GPU Auto-Detection
 auto_detect_cuda_version: true  # Auto-detect GPU and select compatible CUDA version
 
+# Driver Installation Method
+driver_installation_method: "native"  # Options: native, driver-container, precompiled
+
 # NVIDIA Driver Configuration
 nvidia_driver_version: "535"  # Default version, auto-selected if auto_detect_cuda_version is true
 nvidia_driver_ubuntu_install_from_cuda_repo: true
 nvidia_driver_package_state: "present"
 nvidia_driver_skip_reboot: false
+
+# Driver Container Configuration (when driver_installation_method = driver-container)
+driver_container_image: "nvcr.io/nvidia/driver"
+driver_container_tag: "535.154.05-ubuntu22.04"
+driver_container_enable_persistence: true
 
 # CUDA Configuration
 install_cuda: true

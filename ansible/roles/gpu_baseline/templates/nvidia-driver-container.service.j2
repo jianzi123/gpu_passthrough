@@ -1,0 +1,42 @@
+[Unit]
+Description=NVIDIA Driver Container
+Documentation=https://github.com/NVIDIA/gpu-driver-container
+After=docker.service
+Requires=docker.service
+ConditionPathExists=/usr/bin/docker
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+EnvironmentFile=-/etc/nvidia-driver/config
+
+# Stop and remove existing container
+ExecStartPre=-/usr/bin/docker stop nvidia-driver
+ExecStartPre=-/usr/bin/docker rm nvidia-driver
+
+# Start driver container
+ExecStart=/usr/bin/docker run \
+    --name nvidia-driver \
+    --privileged \
+    --pid=host \
+    --ipc=host \
+    -v /run/nvidia:/run/nvidia:shared \
+    -v /var/log:/var/log \
+    -v /dev:/dev \
+    -v /sys:/sys \
+    --restart=unless-stopped \
+    -d \
+    {{ driver_container_image }}:{{ driver_container_tag }}
+
+# Stop container
+ExecStop=/usr/bin/docker stop nvidia-driver
+
+# Remove container
+ExecStopPost=/usr/bin/docker rm nvidia-driver
+
+# Restart policy
+Restart=on-failure
+RestartSec=30s
+
+[Install]
+WantedBy=multi-user.target

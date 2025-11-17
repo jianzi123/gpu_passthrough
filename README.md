@@ -33,6 +33,9 @@ gpu_passthrough/
 │   ├── inventory/             # 主机清单
 │   └── ansible.cfg
 ├── scripts/                    # 验证和监控脚本
+│   ├── install/               # 🆕 安装脚本
+│   │   ├── install_gpu_driver.sh  # 🆕 GPU 驱动安装脚本（多方法支持）
+│   │   └── build_precompiled_driver.sh # 🆕 预编译驱动构建脚本
 │   ├── validation/
 │   │   ├── quick_check.sh     # 快速验证
 │   │   ├── system_check.sh    # 🆕 全面系统验证
@@ -52,6 +55,7 @@ gpu_passthrough/
 │   ├── latest_research_2025.md # 🆕 2024-2025 最新调研
 │   ├── bandwidth_and_benchmarks.md # 🆕 带宽测试和基准测试指南
 │   ├── cuda_compatibility_and_ngc.md # 🆕 CUDA 兼容性和 NGC 镜像指南
+│   ├── gpu_driver_installation_methods.md # 🆕 GPU 驱动安装方法指南
 │   └── implementation_plan.md # 实施方案
 └── README.md
 ```
@@ -62,11 +66,12 @@ gpu_passthrough/
 
 自动化安装以下组件：
 
-- ✅ NVIDIA GPU 驱动
+- ✅ NVIDIA GPU 驱动（支持多种安装方法）
 - ✅ CUDA Toolkit
 - ✅ NVIDIA Container Toolkit (Docker/containerd)
 - ✅ GPU 配置优化（持久化模式、功率限制等）
 - ✅ 🆕 **GPU 自动检测**: 自动识别 GPU 型号并选择对应的 CUDA 和驱动版本
+- ✅ 🆕 **多种安装方法**: Native、Driver Container、Precompiled
 
 **🆕 GPU-CUDA 兼容性自动匹配**:
 
@@ -89,6 +94,33 @@ auto_detect_cuda_version: true
 # 3. 选择推荐的 CUDA 版本和驱动版本
 # 4. 记录检测报告到 /var/log/gpu_baseline/gpu_detection.txt
 ```
+
+**🆕 GPU 驱动安装方法**:
+
+支持三种驱动安装方式，基于 NVIDIA GPU Operator 架构：
+
+| 方法 | 特点 | 适用场景 |
+|------|------|----------|
+| **Native** | 传统安装，直接在系统上安装驱动 | 传统数据中心、物理服务器 |
+| **Driver Container** | 容器化驱动，基于 GPU Operator | Kubernetes、云原生环境 |
+| **Precompiled** | 预编译驱动，快速部署 | 大规模部署、内核统一环境 |
+
+```bash
+# 方法 1: Native 安装（默认）
+ansible-playbook -i inventory/hosts playbooks/setup_gpu_baseline.yml \
+  -e "driver_installation_method=native"
+
+# 方法 2: Driver Container 安装
+ansible-playbook -i inventory/hosts playbooks/setup_gpu_baseline.yml \
+  -e "driver_installation_method=driver-container"
+
+# 方法 3: 使用独立脚本安装
+sudo ./scripts/install/install_gpu_driver.sh --method native --auto-detect
+sudo ./scripts/install/install_gpu_driver.sh --method driver-container
+sudo ./scripts/install/install_gpu_driver.sh --method precompiled
+```
+
+详细说明请参考: [GPU 驱动安装方法指南](docs/gpu_driver_installation_methods.md)
 
 **基于的开源项目**:
 - [NVIDIA/ansible-role-nvidia-driver](https://github.com/NVIDIA/ansible-role-nvidia-driver)

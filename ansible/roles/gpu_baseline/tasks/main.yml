@@ -22,8 +22,14 @@
   include_tasks: detect_gpu.yml
   tags: detect_gpu
 
-- name: Install NVIDIA driver
+- name: Install NVIDIA driver (native method)
   include_tasks: nvidia_driver.yml
+  when: driver_installation_method == "native"
+  tags: nvidia_driver
+
+- name: Install NVIDIA driver (driver container method)
+  include_tasks: driver_container.yml
+  when: driver_installation_method == "driver-container"
   tags: nvidia_driver
 
 - name: Install CUDA toolkit

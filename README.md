@@ -42,6 +42,7 @@ gpu_passthrough/
 │   ├── validation/
 │   │   ├── quick_check.sh     # 快速验证
 │   │   ├── system_check.sh    # 🆕 全面系统验证
+│   │   ├── rdma_check.sh      # 🆕 RDMA 环境验证
 │   │   ├── bandwidth_test.sh  # 🆕 带宽测试
 │   │   ├── intra_node_bandwidth_check.sh   # 🆕 节点内部带宽检查
 │   │   ├── inter_node_nccl_check.sh        # 🆕 跨节点 NCCL 通讯检查
@@ -586,7 +587,190 @@ ansible-playbook -i production_inventory playbooks/detect_slow_nodes.yml \
   -e slow_node_detection_output_dir=/var/log/slow_node_detection/$(date +%Y%m%d)
 ```
 
-### 9. GPU 验证测试 (多级别)
+### 9. 🆕 RDMA 环境验证 (rdma_check.sh)
+
+**全面检查 RDMA/InfiniBand 环境是否准备就绪**，用于高性能集群通讯：
+
+#### 检查项目
+
+**1. RDMA 内核模块**
+- ✅ **核心 RDMA 模块**: rdma_cm, ib_core, ib_uverbs, rdma_ucm
+- ✅ **传输层模块**: ib_ipoib, ib_srp, ib_iser 等
+- ✅ **厂商驱动**: mlx5_core, mlx4_core (Mellanox/NVIDIA)
+- ✅ **GPUDirect RDMA**: nv_peer_mem / nvidia_peermem 模块
+
+**2. RDMA 设备状态**
+- ✅ **InfiniBand 设备**: ibstat 检测设备和端口状态
+- ✅ **端口状态**: Active/Down 状态，链路速度 (FDR/EDR/HDR/NDR)
+- ✅ **RDMA 设备信息**: ibv_devinfo 检测设备能力
+- ✅ **链路层**: InfiniBand 或 RoCE (Ethernet)
+
+**3. 软件栈完整性**
+- ✅ **核心库**: libibverbs, librdmacm, rdma-core
+- ✅ **诊断工具**: infiniband-diags (ibstat, ibv_devinfo 等)
+- ✅ **性能测试**: perftest (ib_write_bw, ib_read_bw 等)
+- ✅ **Subnet Manager**: opensm (InfiniBand 必需)
+
+**4. 网络配置**
+- ✅ **IPoIB 接口**: IP over InfiniBand 网络接口
+- ✅ **MTU 配置**: Connected mode (65520) vs Datagram mode (2044)
+- ✅ **RoCE 支持**: RDMA over Converged Ethernet 检测
+- ✅ **接口状态**: UP/DOWN, IP 地址配置
+
+**5. GPUDirect RDMA 环境**
+- ✅ **GPU 检测**: NVIDIA GPU 和驱动版本
+- ✅ **Peer Memory**: nv_peer_mem 模块和 /sys/kernel/mm/memory_peer_target
+- ✅ **NUMA 亲和性**: GPU 和 IB 设备的 NUMA 节点分布
+- ✅ **GPU 拓扑**: NVLink 和 PCIe 拓扑结构
+
+**6. 系统配置**
+- ✅ **IOMMU**: VT-d/AMD-Vi 启用状态和内核参数
+- ✅ **内存锁定**: ulimit memlock 配置 (应为 unlimited)
+- ✅ **PCIe 状态**: GPU 和 IB 设备的 PCIe 链路速度/宽度
+
+#### 使用方式
+
+```bash
+# 运行 RDMA 环境检查
+sudo ./scripts/validation/rdma_check.sh
+
+# 指定输出目录
+sudo ./scripts/validation/rdma_check.sh /path/to/output_dir
+```
+
+#### 输出报告
+
+脚本会生成以下文件：
+
+```
+output_dir/
+├── rdma_check.json           # JSON 格式详细报告
+├── rdma_summary.md           # Markdown 格式摘要报告
+├── ibstat_output.txt         # ibstat 原始输出
+├── ibv_devinfo_output.txt    # ibv_devinfo 原始输出
+├── rdma_link_output.txt      # rdma link 输出
+└── gpu_topology.txt          # GPU 拓扑信息
+```
+
+#### 报告示例
+
+```
+========================================
+RDMA 环境验证
+========================================
+开始时间: 2025-01-15 10:30:00
+
+1. RDMA 内核模块检查
+========================================
+✓ [内核模块] rdma_cm: 已加载
+✓ [内核模块] ib_core: 已加载
+✓ [内核模块] ib_uverbs: 已加载
+✓ [厂商驱动] mlx5_core: 已加载
+✓ [厂商驱动] mlx5_ib: 已加载
+✓ [GPUDirect] nv_peer_mem: 已加载 (版本: 1.3-0)
+
+2. RDMA 设备检查
+========================================
+✓ [IB设备] 设备数量: 2
+✓ [IB端口] mlx5_0:1: Active @ 200 Gb/sec (4X HDR)
+✓ [IB端口] mlx5_1:1: Active @ 200 Gb/sec (4X HDR)
+
+检查结果摘要
+========================================
+  ✓ 通过:  45
+  ⚠ 警告:  3
+  ✗ 失败:  0
+
+========================================
+✅ RDMA 环境基本就绪
+========================================
+```
+
+#### 常见问题修复
+
+**问题 1: 内核模块未加载**
+```bash
+# 加载 RDMA 核心模块
+sudo modprobe rdma_cm
+sudo modprobe ib_core
+sudo modprobe ib_uverbs
+
+# 加载 Mellanox 驱动
+sudo modprobe mlx5_core
+sudo modprobe mlx5_ib
+
+# 加载 GPUDirect RDMA
+sudo modprobe nv_peer_mem
+```
+
+**问题 2: 内存锁定限制**
+```bash
+# 编辑 /etc/security/limits.conf
+sudo tee -a /etc/security/limits.conf << EOF
+* soft memlock unlimited
+* hard memlock unlimited
+EOF
+
+# 重新登录生效
+```
+
+**问题 3: IB 端口 Down**
+```bash
+# 检查物理连接
+ibstat
+
+# 检查链路状态
+ibv_devinfo
+
+# 重启 IB 驱动
+sudo /etc/init.d/openibd restart
+```
+
+**问题 4: GPUDirect RDMA 不可用**
+```bash
+# 安装 nvidia-peer-memory (CUDA 11.x+)
+# Ubuntu/Debian:
+git clone https://github.com/Mellanox/nv_peer_memory.git
+cd nv_peer_memory
+./build_module.sh
+sudo ./install.sh
+
+# 或使用 MLNX_OFED 自带的版本
+sudo /etc/init.d/nv_peer_mem start
+```
+
+#### RDMA 性能测试
+
+检查通过后，可以进行 RDMA 性能测试：
+
+```bash
+# 测试 RDMA 写带宽 (需要两台主机)
+# 服务端
+ib_write_bw -d mlx5_0 -a
+
+# 客户端
+ib_write_bw -d mlx5_0 -a <server_ip>
+
+# 测试 GPUDirect RDMA (如果支持)
+# 服务端
+ib_write_bw -d mlx5_0 --use_cuda=0
+
+# 客户端
+ib_write_bw -d mlx5_0 --use_cuda=0 <server_ip>
+
+# 预期性能 (InfiniBand HDR 200Gb/s)
+# - 主机内存: ~23-24 GB/s
+# - GPU 内存 (GPUDirect): ~20-22 GB/s
+```
+
+#### 参考资源
+
+- [NVIDIA GPUDirect RDMA 官方文档](https://docs.nvidia.com/cuda/gpudirect-rdma/)
+- [Mellanox OFED 用户手册](https://docs.nvidia.com/networking/display/mlnxofedv24010331)
+- [Linux RDMA 核心文档](https://github.com/linux-rdma/rdma-core)
+- [InfiniBand 性能调优](https://docs.nvidia.com/networking/display/perftuning)
+
+### 10. GPU 验证测试 (多级别)
 
 #### Level 1: 快速验证 (1-5 分钟)
 - nvidia-smi 可用性检查
